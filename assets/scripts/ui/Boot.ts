@@ -45,49 +45,57 @@ export function setupBootDom(): void {
   document.addEventListener('touchend', enterFullscreen, { once: true, passive: true })
 }
 
-/** 进全屏，成功后（移动端）锁定横屏；不支持的浏览器静默跳过 */
-export function enterFullscreen(): void {
+/** 全屏操作结果：ok 成功；unsupported 浏览器无此能力（如 iPhone）；rejected 被浏览器拒绝 */
+export type FullscreenResult = 'ok' | 'unsupported' | 'rejected'
+
+/** 进全屏，成功后（移动端）锁定横屏；结果返回给调用方做提示，不再无声吞错 */
+export async function enterFullscreen(): Promise<FullscreenResult> {
   if (typeof document === 'undefined') {
-    return
+    return 'unsupported'
   }
   const el = document.documentElement as HTMLElement & {
     webkitRequestFullscreen?: () => Promise<void> | void
   }
+  if (typeof el.requestFullscreen !== 'function' && typeof el.webkitRequestFullscreen !== 'function') {
+    return 'unsupported'
+  }
   try {
     const req = el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen?.()
-    Promise.resolve(req)
-      .then(() => lockLandscape())
-      .catch(() => undefined)
-  } catch {
-    // 不支持全屏的浏览器（如 iPhone Safari）静默忽略
+    await Promise.resolve(req)
+    lockLandscape()
+    return 'ok'
+  } catch (e) {
+    console.warn('[fullscreen] 进入全屏被拒：', e)
+    return 'rejected'
   }
 }
 
-/** 退出全屏 */
-export function exitFullscreen(): void {
+/** 退出全屏；结果返回给调用方做提示 */
+export async function exitFullscreen(): Promise<FullscreenResult> {
   if (typeof document === 'undefined') {
-    return
+    return 'unsupported'
   }
   const doc = document as Document & { webkitExitFullscreen?: () => Promise<void> | void }
+  if (typeof doc.exitFullscreen !== 'function' && typeof doc.webkitExitFullscreen !== 'function') {
+    return 'unsupported'
+  }
   try {
     const req = doc.exitFullscreen ? doc.exitFullscreen() : doc.webkitExitFullscreen?.()
-    Promise.resolve(req).catch(() => undefined)
-  } catch {
-    // 静默
+    await Promise.resolve(req)
+    return 'ok'
+  } catch (e) {
+    console.warn('[fullscreen] 退出全屏被拒：', e)
+    return 'rejected'
   }
 }
 
 /** 全屏切换（右上角按钮用）：当前全屏则退出，否则进入 */
-export function toggleFullscreen(): void {
+export async function toggleFullscreen(): Promise<FullscreenResult> {
   if (typeof document === 'undefined') {
-    return
+    return 'unsupported'
   }
   const doc = document as Document & { webkitFullscreenElement?: Element | null }
-  if (document.fullscreenElement || doc.webkitFullscreenElement) {
-    exitFullscreen()
-  } else {
-    enterFullscreen()
-  }
+  return document.fullscreenElement || doc.webkitFullscreenElement ? exitFullscreen() : enterFullscreen()
 }
 
 /** 锁横屏：仅 Android Chrome 等支持（且需在全屏态），iOS Safari 无此能力静默跳过 */
