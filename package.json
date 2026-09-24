@@ -1,0 +1,9 @@
+{
+  "name": "texas-holdem",
+  "version": "1.0.0",
+  "description": "德州扑克单机小游戏（Cocos Creator 3.8 + TypeScript，代码构建 UI，无需图片资源）",
+  "creator": {
+    "version": "3.8.0"
+  },
+  "uuid": "24252d58-8d92-4de6-a849-5c5bc5dea738"
+}

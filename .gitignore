@@ -1,0 +1,23 @@
+# 敏感信息：真实 DeepSeek key 只存在本地文件，绝不入库（构建/服务器均用空 stub 或环境变量注入）
+assets/scripts/ai/DeepSeekKey.local.ts
+assets/scripts/ai/DeepSeekKey.local.ts.meta
+
+# Cocos Creator 生成物
+library/
+temp/
+local/
+build/
+profiles/
+native/
+
+# 依赖
+node_modules/
+server/node_modules/
+
+# 运行时产物：服务器上的构建页与账号数据库不入库
+server/web/
+server/data/
+
+# 杂项
+.DS_Store
+*.log

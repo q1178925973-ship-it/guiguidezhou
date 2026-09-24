@@ -1,2 +1,208 @@
+<<<<<<< HEAD
 # guiguidezhou
 龟龟德州
+=======
+# 德州扑克小游戏（Cocos Creator 3.8 + TypeScript）
+
+一个用于学习 Cocos Creator 的德州扑克（Texas Hold'em）小游戏：
+单机模式对战 3 个 AI，联机模式和朋友同桌（空位 AI 补齐、满员观战），
+完整体验「盲注 → 翻牌前 → 翻牌 → 转牌 → 河牌 → 摊牌」流程。
+
+**UI 全部由代码创建（Graphics + Label）；美术使用三张图：牌面雪碧图 `cards.png`、牌背 `card-back.png`、桌面整景 `table.png`（均在 `assets/resources/`，缺失时自动回退代码绘制）。**
+
+## 功能一览
+
+- 4 人桌（你 + 3 个 AI），起始筹码 1000，盲注 10/20，无限注玩法
+- 完整下注轮转：弃牌 / 过牌 / 跟注 / 加注（最小、½池、满池、全下 四档）
+- 摊牌时 7 选 5 自动评估最优牌型，支持主池 / 边池分层结算与平分
+- 发牌飞入、公共牌翻面、行动高亮、动作气泡、胜利特效等动画
+- 弃牌与局末自动翻开底牌；局末右下角提供「下一局 / 重开」按钮
+- 按面额（500/100/25/5/1）渲染筹码堆，下注时有「扔筹码」飞入动画
+- 桌面浮层（名牌 / 底池 / 聊天面板 / 操作按钮）统一磨砂玻璃质感；玩家名牌放在手牌右侧，阶段提示在右上角
+- 左下角牌桌聊天面板完整保留最近 50 条机器人发言，按住拖动滚动查看历史（带滚动条）；局末金币从底池飞向赢家并爆开庆祝
+- 纯代码合成音效（Web Audio，无音频资源）：发牌 / 翻牌 / 下注 / 胜利，右上角「音效」按钮可静音
+- 玩家辅助：你的名牌展开第二行，实时显示当前牌型与蒙特卡洛胜率（每街与对手弃牌后自动刷新）
+- 收池动画：每街结束时各家下注筹码飞进底池
+- 图标使用 Font Awesome 6 Solid 字体：`assets/resources/fonts/fa-solid.ttf`，由 `IconFont.ts` 统一加载，失败时图标留空、纯文字照常
+- 机器人接入 DeepSeek（deepseek-chat）：AI 决策 + 角色台词，失败自动降级本地策略
+- 联机模式：访问链接输名字直接上桌，空位由服务端 AI 补齐，4 座满后自动观战；真人掉线座位即时转 AI 托管不卡局；聊天面板可发言，视角永远以自己为下方座位
+- DEV 模式启动时自动运行逻辑自测，结果打印在控制台
+
+## 快速开始
+
+### 1. 打开项目
+
+1. 安装 Cocos Dashboard，并在其中安装 Cocos Creator 3.8.x
+2. Dashboard → 项目 → 打开其他项目 → 选择本 `texas-holdem` 文件夹
+3. 首次打开会自动生成 library 等目录并编译脚本，等待完成即可
+
+### 2. 搭建场景（一次性，约 1 分钟）
+
+1. 资源管理器中 `assets` 右键 → 创建 → 场景，命名 `main`，双击打开
+2. 层级管理器右键 → 创建 → UI 组件 → Canvas（场景里没有 Canvas 时）
+3. 选中 Canvas，在检查器中把 Design Resolution 设为 **1280 × 720**，勾选 Fit Height
+4. Canvas 右键 → 创建 → 空节点，命名 `Game`
+5. 选中 `Game` → 检查器「添加组件」→ 自定义脚本 → **GameApp**
+6. 保存场景（⌘S / Ctrl+S）
+
+> 即使第 4 步把节点建错了位置，GameApp 也会在运行时自动把自己移到 Canvas 下并在控制台提示。
+
+### 3. 运行
+
+点击编辑器顶部的 ▶ 预览按钮，在浏览器中运行。
+
+**验证**：打开浏览器开发者工具控制台，应看到：
+
+```text
+[逻辑自测] 通过 8 项，失败 0 项
+```
+
+然后即可开始玩：轮到你时底部会滑出操作条；机器人行动由 DeepSeek 驱动（约 1~5 秒并带台词），断网时自动切换本地策略。
+
+## 联机模式
+
+### 玩法
+
+- 打开 `分享链接`（形如 `http://<服务器>/index.html?online=1`），先输入昵称再进牌桌
+- 8 个座位真人优先；没人坐的座位由服务端 AI（DeepSeek，失败回落 BotBrain + 台词池）代打
+- 牌局进行中加入的玩家自动排队，**下一手开始时入座**；8 座全满后新连接进入观战
+- 真人掉线：座位立即由 AI 托管继续打，重进需重新排队入座
+- 局末 6 秒自动开下一手；破产自动重新买入 1000（联机不打断）
+- **重置对局投票**：右下角「重置对局」发起，30 秒内不操作视为同意、点「反对」立即否决；通过后全员回到 1000 筹码、胜负统计清零
+- **行动倒计时**：轮到真人时其座位卡片上方显示 60 秒倒计时，超时自动过牌 / 跟注
+- 聊天面板底部输入行可发言；只有你能看到自己的底牌，局末摊牌统一亮牌
+- 有人弃牌时，他的底牌会翻给**仍在局内**的玩家看（观战者与其他弃牌者不可见）
+- 每张玩家卡片集成用户名、筹码、胜负局数；自己的卡片另有牌型 / 胜率提示
+- 结算横幅按池分开播报（如「主池 900 归 A，边池 400 归 B」），只有同池并列才叫「平分」
+
+### 架构
+
+```text
+浏览器（Cocos web 构建）
+  └─ NetClient ── WebSocket(JSON) ── server/（Node 权威服务器）
+                                       ├─ 复用 assets/scripts/core 引擎跑牌局
+                                       ├─ Table：8 座 / 等待队列 / 观战 / AI 代打 / 投票重置 / 行动计时
+                                       └─ HTTP 伺服 server/web/ 内的构建产物（同端口）
+```
+
+- 客户端**只渲染快照**：服务器广播全量 `Snapshot`，客户端 diff 前后快照触发发牌、翻公共牌、收池、气泡、胜利特效
+- 服务端与单机共用同一套 `core/` 引擎（纯逻辑无 cc 依赖），规则 100% 一致；`net/Protocol.ts` 是双端共享的消息类型
+- 服务端 AI 走 DeepSeek：key 从环境变量 `DEEPSEEK_API_KEY` 读取（systemd 或 shell 注入），**不进仓库与浏览器构建产物**；调用失败自动回落本地 BotBrain，游戏永不卡死
+
+### 本地试玩（不用服务器）
+
+1. `cd server && npm install`
+2. `DEEPSEEK_API_KEY=你的key npm start`（默认 8080 端口；不设则 AI 用本地决策）
+3. 编辑器预览或本地构建后，用两个浏览器窗口打开 `...?online=1&server=ws://localhost:8080`
+
+### 部署到服务器
+
+1. Cocos 构建发布 web-mobile，把 `build/web-mobile/` 整目录内容上传到服务器 `server/web/`
+2. 服务器进入 `server/` 执行 `npm install`（国内可加 `--registry=https://registry.npmmirror.com`）
+3. `npm start`（或用 systemd 守护，参考 `Environment=PORT=80`；服务端 AI 的 key 用 `Environment=DEEPSEEK_API_KEY=sk-xxx` 注入，不要写进任何文件）
+4. 分享地址：`http://<服务器>:<端口>/index.html?online=1`（不带 `?online=1` 则进单机模式）
+5. `server/selftest.ts` 是协议自检（起真实服务器模拟 9 个连接，含投票重置用例）：`npm run selftest`
+6. `server/settlement-check.ts` 是结算回归（对A / 对9 边池场景）：`npx tsx settlement-check.ts`
+
+## 代码结构
+
+```text
+server/                  # 联机服务器（Node + ws，tsx 直跑 TS，不依赖 Cocos）
+├── index.ts             # 入口：HTTP 静态伺服 web/ + 同端口 WebSocket + 心跳
+├── Table.ts             # 权威牌桌：座位/等待/观战/AI 代打/快照广播
+├── selftest.ts          # 协议自检（模拟 5 连接走完整流程）
+└── package.json         # 依赖：ws + tsx
+assets/scripts/
+├── core/                 # 纯牌局逻辑（不依赖 cc，可独立测试）
+│   ├── Card.ts           # 牌（点数 + 花色）
+│   ├── Deck.ts           # 牌堆：洗牌 / 发牌
+│   ├── HandRank.ts       # 牌型评估：7 选 5 取最优、比较、中文描述
+│   ├── Player.ts         # 玩家数据：筹码 / 下注 / 状态
+│   ├── Types.ts          # 阶段、动作、事件等类型定义
+│   ├── GameEngine.ts     # 状态机：盲注、下注轮转、街推进、全下 run-out
+│   ├── Settler.ts        # 摊牌结算：主池 / 边池分层与分配
+│   └── BotBrain.ts       # AI：翻牌前 Chen 公式 + 翻牌后成牌强度
+├── ai/                   # DeepSeek 接入（失败自动降级本地策略）
+│   ├── DeepSeekKey.local.ts  # ⚠️ 本地私密：API Key，勿提交/分发/上传服务器
+│   ├── Personas.ts       # 机器人人设与台词池（单机 / 联机服务端共用）
+│   └── AiAdvisor.ts      # 机器人军师：AI 决策 + 台词 + 清洗与降级
+├── net/                  # 联机协议与客户端（双端共享，不依赖 cc）
+│   ├── Protocol.ts       # 消息与快照类型（Snapshot / ClientMsg / ServerMsg）
+│   └── NetClient.ts      # WebSocket 封装 + 服务器地址解析 + ?online=1 判定
+├── ui/                   # 视图层（代码构建，无资源依赖）
+│   ├── Theme.ts          # 配色 / 尺寸常量、节点·文本·按钮工厂
+│   ├── TableView.ts      # 桌面整景图（table.png）+ Graphics 兜底 + 牌堆
+│   ├── CardView.ts       # 单张牌：图片牌面/牌背 + 兜底绘制、发牌 / 翻牌动画
+│   ├── CardFaces.ts      # 牌面雪碧图与牌背的加载、切片（可回退代码绘制）
+│   ├── SeatView.ts       # 座位：手牌、筹码、下注、气泡、高亮、名牌提示行
+│   ├── CommunityView.ts  # 公共牌区 + 底池
+│   ├── ActionBar.ts      # 玩家操作条（弃牌/过牌·跟注/加注四档）
+│   ├── ChatLog.ts        # 左下角聊天面板（50 条历史 + 拖动滚动 + 滚动条）
+│   ├── WinFx.ts          # 胜利庆祝：金币飞向赢家 + 爆金币；收池飞筹码
+│   ├── IconFont.ts       # Font Awesome 图标字体加载与图标 Label 工厂
+│   ├── SoundFx.ts        # Web Audio 合成音效 + 右上角静音开关
+│   ├── HeroHint.ts       # 玩家辅助计算：牌型 + 蒙特卡洛胜率文案
+│   ├── MessageBar.ts     # 阶段提示、结算横幅、重开弹窗
+│   ├── NameDialog.ts     # 联机入口：昵称输入弹窗（EditBox + 玻璃面板）
+│   ├── SeatLayout.ts     # 座位布局 / 阶段名 / 动作文案（单机联机共用）
+│   ├── OnlineGameApp.ts  # 联机入口组件：连接服务器 + 快照 diff 渲染
+│   └── GameApp.ts        # 单机入口组件：装配视图 + 驱动事件流转（?online=1 时移交给 OnlineGameApp）
+└── tests/
+    └── LogicSelfTest.ts  # 逻辑自测（DEV 启动时自动运行）
+```
+
+## 玩法与规则说明
+
+- 庄家钮每手顺时针轮转，小盲 10 / 大盲 20，翻牌前从大盲下家开始行动
+- 加注需不低于「当前注 + 最小加注增量」，最后一档「全下」不受此限
+- 所有人下注相等（或只剩一人未全下）时进入下一街；全部全下时自动发完公共牌摊牌
+- 摊牌按每人总投入分层结算：投入少的人只竞争主池，多余部分构成边池
+- AI 破产会自动重新买入 1000；你破产则弹出「重新开始」
+
+### 已知简化（学习项目取舍）
+
+- 小于最小加注的全下不会重新开放他人的加注权（官方规则细节）
+- AI 不计算听牌（听花 / 听顺）胜率，只按当前成牌强度决策（本地降级策略）
+- 平分底池时的余数筹码从最靠前座位开始每家分 1
+
+### 机器人 AI（DeepSeek）
+
+- 机器人每次行动调用一次 DeepSeek `deepseek-chat`，一次返回「决策 + 台词」
+- 三个机器人各有性格人设：阿宝=新手话痨、老K=老练毒舌、胖虎=莽夫
+- 断网 / 超时 / 返回不合法时自动降级为本地 BotBrain + 本地台词池，游戏不中断
+- API Key 保存在 `assets/scripts/ai/DeepSeekKey.local.ts`：仅限本地使用，**勿提交仓库、勿分发构建产物**；泄露后到 DeepSeek 后台轮换
+
+## 常见问题
+
+| 现象 | 处理 |
+| --- | --- |
+| 运行后一片漆黑没有 UI | 确认场景里有 Canvas，且 Game 节点在 Canvas 层级下 |
+| 预览灰底、UI 变成被透视拍歪的斜面 | 代码创建的节点默认在 DEFAULT 层，Canvas 的 UI 相机只渲染 UI_2D 层；`Theme.createNode()` 已统一设置 `node.layer = Layers.Enum.UI_2D` |
+| 某个 Graphics 图形被遮住不显示 | 节点自身的渲染组件先于子节点绘制；想让它盖住某个子节点，就把它挪到排在后者之后的子节点上（见 `TableView` 的 felt 节点） |
+| 控制台没有自测输出 | 自测仅在开发预览（DEV）下运行；构建发布版不会执行 |
+| 想改盲注 / 起始筹码 | `GameApp.startMatch()` 里 `new GameEngine({...})` 传参覆盖默认配置 |
+| 想换座位布局 / 桌子配色 | `GameApp.ts` 的 `SEAT_LAYOUT`、`Theme.ts` 的 `THEME` |
+| 机器人不说台词、行动变快 | DeepSeek 调用失败已降级本地策略，控制台有 `[AI]` 警告；检查网络或 key |
+| 更换 DeepSeek key | 只改 `assets/scripts/ai/DeepSeekKey.local.ts` 一处 |
+| 牌面显示的还是代码绘制简版 | `assets/resources/cards.png` 加载失败会回退并打印 `[CardFaces]` 警告；换牌面图直接覆盖该文件（1440×1320，9 列 × 6 行、每格 160×220，行优先 ♠♥♣♦ A~K + 大小王）。注意：新图必须是**精确网格**——带缝隙或错位的图会出现黑边/大小不一（当前的 cards.png 是从原图按实测边界重排过的） |
+| 想换牌背 / 桌面整景图 | 覆盖 `assets/resources/card-back.png`（竖版整图，替换后若四角不透明会显示方角）和 `assets/resources/table.png`（16:9 整景，铺满全屏）；加载失败自动回退代码绘制，控制台有对应警告 |
+| 运行时报 `Cannot read properties of undefined (reading 'SIMPLE')` | 3.8 里 `SpriteType` 是引擎私有枚举，不能 `import { SpriteType } from 'cc'`（编译不报错但运行时是 undefined）；正确写法是 `Sprite.Type.SIMPLE`、`Sprite.SizeMode.CUSTOM` |
+| 节点挂了 Sprite 后，原来的 Graphics / 牌面都不渲染 | 一个节点只能挂一个渲染组件（引擎里 `node._uiProps.uiComp` 只存一个，后者顶掉前者）；Sprite 要放到独立的子节点上，见 `CardView` 的 img 节点 |
+| Mask 裁剪的子节点在预览里整体消失 | 双相机（3D + UI）场景下 Mask 的模板缓冲可能被清掉导致内容全被裁没；滚动列表建议像 `ChatLog` 那样手动按可视范围设置行 `active`，不依赖 Mask |
+| 图标（奖杯 / 箭头 / 气泡 / 金币）不显示 | 检查 `assets/resources/fonts/fa-solid.ttf` 是否存在，加载失败控制台会打印 `[IconFont]` 警告，其余功能不受影响；换图标改 `ui/IconFont.ts` 的 `ICON` 表（Font Awesome 6 Solid 的 unicode 码点） |
+| 聊天面板怎么看更早的发言 | 在面板上按住上下拖动即可滚动，右侧滚动条指示位置；最多保留最近 50 条 |
+| 没有声音 / 想关声音 | 音效用浏览器 Web Audio 合成（无音频资源），首次需一次点击交互后才会响；右上角「音效」按钮切换静音。原生平台预览无声属正常 |
+| 胜率是怎么算的 | 每次刷新用已知牌（底牌 + 公共牌）做 160 次蒙特卡洛模拟：随机补全公共牌与对手底牌后比牌型，赢 1 分 / 平 0.5 分；数值有少量随机波动属正常 |
+| 联机时输入不了名字 / 聊天 | EditBox 需要点击输入框聚焦；个别浏览器需要多点一次，移动端会拉起系统键盘 |
+| 联机中途断线怎么办 | 座位会被 AI 托管继续打，刷新页面重新输名字排队，下一手回到桌上 |
+| 想换联机端口 | 服务端 `PORT` 环境变量（systemd 部署改 `texas.service` 里的 `Environment=PORT=`），客户端分享链接不用变（同源自动连对端口） |
+| 服务器上 AI 说话没接 DeepSeek | 联机 AI 刻意只用本地策略：DeepSeek key 留在单机客户端，不上服务器（避免 key 泄露）；要接可在 `server/Table.ts` 的 `scheduleBot` 里扩展 |
+
+## 下一步练习建议
+
+1. 把 `CardView` 改为 Sprite + 图片资源（体会资源加载与图集）
+2. 给按钮、发牌、赢牌加音效（`AudioSource` 组件）
+3. 把固定档位加注升级为滑条 + 确认（`Slider` 组件）
+4. 用蒙特卡洛模拟替换 `BotBrain` 的启发式强度评估
+5. 接入 `EventTouch` 做牌局回放或战绩统计页
+>>>>>>> 4236712 (德州扑克：单机+联机完整版)

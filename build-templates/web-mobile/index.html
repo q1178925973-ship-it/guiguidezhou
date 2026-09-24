@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+
+  <title>德州扑克 · 联机对局</title>
+
+  <!--http://www.html5rocks.com/en/mobile/mobifying/-->
+  <meta name="viewport"
+        content="width=device-width,user-scalable=no,initial-scale=1,minimum-scale=1,maximum-scale=1,minimal-ui=true"/>
+
+  <!--https://developer.apple.com/library/safari/documentation/AppleApplications/Reference/SafariHTMLRef/Articles/MetaTags.html-->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- force webkit on 360 -->
+  <meta name="renderer" content="webkit"/>
+  <meta name="force-rendering" content="webkit"/>
+  <!-- force edge on IE -->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+  <meta name="msapplication-tap-highlight" content="no">
+
+  <!-- force full screen on some browser -->
+  <meta name="full-screen" content="yes"/>
+  <meta name="x5-fullscreen" content="true"/>
+  <meta name="360-fullscreen" content="true"/>
+
+  <!--fix fireball/issues/3568 -->
+  <!--<meta name="browsermode" content="application">-->
+  <meta name="x5-page-mode" content="app">
+
+  <!--<link rel="apple-touch-icon" href=".png" />-->
+  <!--<link rel="apple-touch-icon-precomposed" href=".png" />-->
+
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+
+  <!-- 启动遮罩：引擎与资源下载期间的全屏 loading，游戏首帧就绪后由
+       GameApp / OnlineGameApp 调用 window.__hideBootSplash() 淡出 -->
+  <style>
+    html, body { margin: 0; padding: 0; background: #0d1117; }
+    #boot-splash {
+      position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 9999;
+      background: #0d1117; color: #dcd8cc;
+      font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: opacity 0.45s ease;
+    }
+    #boot-splash.done { opacity: 0; pointer-events: none; }
+    .bs-title { font-size: 30px; font-weight: 700; color: #f5c469; letter-spacing: 10px; margin-bottom: 26px; }
+    .bs-cards { display: flex; margin-bottom: 30px; }
+    .bs-wrap { width: 40px; height: 56px; display: flex; align-items: center; justify-content: center; }
+    .bs-w1 { transform: rotate(-16deg); }
+    .bs-w2 { transform: translateY(-6px); }
+    .bs-w3 { transform: rotate(16deg); }
+    .bs-card {
+      width: 34px; height: 48px; border-radius: 6px;
+      background: #8a2f3a; border: 2px solid rgba(245, 196, 105, 0.45);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+      animation: bs-float 1.6s ease-in-out infinite;
+    }
+    .bs-w2 .bs-card { animation-delay: 0.2s; }
+    .bs-w3 .bs-card { animation-delay: 0.4s; }
+    @keyframes bs-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+    .bs-bar { width: 200px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+    .bs-fill {
+      width: 36%; height: 100%; border-radius: 2px; background: #f5c469;
+      animation: bs-sweep 1.4s ease-in-out infinite;
+    }
+    @keyframes bs-sweep { 0% { margin-left: -36%; } 100% { margin-left: 100%; } }
+    .bs-text { margin-top: 14px; font-size: 14px; color: #9aa3b2; letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+  <div id="boot-splash">
+    <div class="bs-title">德州扑克</div>
+    <div class="bs-cards">
+      <div class="bs-wrap bs-w1"><div class="bs-card"></div></div>
+      <div class="bs-wrap bs-w2"><div class="bs-card"></div></div>
+      <div class="bs-wrap bs-w3"><div class="bs-card"></div></div>
+    </div>
+    <div class="bs-bar"><div class="bs-fill"></div></div>
+    <div class="bs-text" id="bs-text">正在加载引擎…</div>
+  </div>
+
+  <div id="GameDiv" cc_exact_fit_screen="true">
+      <div id="Cocos3dGameContainer">
+        <canvas id="GameCanvas" oncontextmenu="event.preventDefault()" tabindex="99"></canvas>
+      </div>
+    </div>
+
+  <script>
+    (function () {
+      var splash = document.getElementById('boot-splash');
+      var textEl = document.getElementById('bs-text');
+      var texts = ['正在加载引擎…', '正在加载资源…', '正在整理牌桌…'];
+      var i = 0;
+      var hidden = false;
+      var rotator = setInterval(function () {
+        if (hidden) { clearInterval(rotator); return; }
+        i = (i + 1) % texts.length;
+        textEl.textContent = texts[i];
+      }, 2500);
+      // 网络过慢时的提示（不中断，仅换文案）
+      setTimeout(function () {
+        if (!hidden) { textEl.textContent = '加载较慢，请稍候…'; }
+      }, 30000);
+      window.__hideBootSplash = function () {
+        if (hidden || !splash) { return; }
+        hidden = true;
+        clearInterval(rotator);
+        splash.classList.add('done');
+        setTimeout(function () { splash.remove(); }, 600);
+      };
+    })();
+  </script>
+
+<!-- Polyfills bundle. -->
+<script src="src/polyfills.bundle.js" charset="utf-8"> </script>
+
+<!-- SystemJS support. -->
+<script src="src/system.bundle.js" charset="utf-8"> </script>
+
+<!-- Import map -->
+<script src="src/import-map.json" type="systemjs-importmap" charset="utf-8"> </script>
+
+<script>
+    System.import('./index.js').catch(function(err) {
+        console.error(err);
+        var textEl = document.getElementById('bs-text');
+        if (textEl) { textEl.textContent = '加载失败，请刷新重试'; }
+    })
+</script>
+
+</body>
+</html>
