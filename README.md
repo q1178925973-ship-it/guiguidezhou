@@ -1,7 +1,6 @@
-<<<<<<< HEAD
-# guiguidezhou
+
 龟龟德州
-=======
+
 # 德州扑克小游戏（Cocos Creator 3.8 + TypeScript）
 
 一个用于学习 Cocos Creator 的德州扑克（Texas Hold'em）小游戏：
