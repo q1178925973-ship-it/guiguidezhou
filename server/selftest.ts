@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import WebSocket from 'ws'
-import { ServerMsg, Snapshot } from '../assets/scripts/net/Protocol'
+import { HandRecordJ, ServerMsg, Snapshot } from '../assets/scripts/net/Protocol'
 
 /**
  * 协议自检：起一个真实服务器，模拟 8 名玩家 + 1 名观战者，
@@ -93,6 +93,8 @@ interface AuthRec {
   welcome: { seat: number; waiting: boolean } | null
   latest: Snapshot | null
   sysTexts: string[]
+  /** getHistory 的最近一次应答 */
+  hist: HandRecordJ[] | null
 }
 
 function connectAuth(port: number, first: Record<string, unknown>): Promise<AuthRec> {
@@ -108,6 +110,7 @@ function connectAuth(port: number, first: Record<string, unknown>): Promise<Auth
       welcome: null,
       latest: null,
       sysTexts: [],
+      hist: null,
     }
     ws.on('open', () => {
       ws.send(JSON.stringify(first))
@@ -134,6 +137,8 @@ function connectAuth(port: number, first: Record<string, unknown>): Promise<Auth
         }
       } else if (msg.t === 'say' && msg.tag === 'sys') {
         rec.sysTexts.push(msg.text)
+      } else if (msg.t === 'history') {
+        rec.hist = msg.hands
       }
     })
   })
@@ -299,6 +304,24 @@ async function runSelftest(): Promise<void> {
       check(await waitFor(() => (wrong.authErr ?? '').includes('不正确'), 5000), '错误密码登录被拒绝')
       // 替身自动过牌：handNo>=3 表示打完两手（结算过两次），账号胜负随每次局末入库
       await waitFor(() => (zhang.latest?.handNo ?? 0) >= 3, 90000)
+      // 对局记录：按需拉取应包含打完的手牌（最新在前，赢家带两张底牌）
+      zhang.ws.send(JSON.stringify({ t: 'getHistory' }))
+      const gotHist = await waitFor(() => (zhang.hist?.length ?? 0) >= 2, 8000)
+      check(gotHist, `对局记录按需下发（${zhang.hist?.length ?? 0} 手）`)
+      const h0 = zhang.hist?.[0]
+      check(
+        !!h0 &&
+          h0.handNo > 0 &&
+          h0.title.length > 0 &&
+          Array.isArray(h0.community) &&
+          h0.winners.length > 0 &&
+          h0.winners.every((w) => w.hole.length === 2),
+        '记录含手数 / 标题 / 公共牌 / 赢家底牌',
+      )
+      check(
+        (zhang.hist ?? []).every((h, i) => i === 0 || (zhang.hist ?? [])[i - 1].handNo > h.handNo),
+        '记录按最新在前排序',
+      )
       const mySeat = zhang.welcome?.seat ?? -1
       zhang.ws.close()
       await sleep(800)

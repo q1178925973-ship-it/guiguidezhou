@@ -5,12 +5,14 @@ import { Card } from '../assets/scripts/core/Card'
 import { GameEngine } from '../assets/scripts/core/GameEngine'
 import { Player } from '../assets/scripts/core/Player'
 import { Act, ActKind, GameEvent, LegalActs, Phase } from '../assets/scripts/core/Types'
-import { CardJ, ClientMsg, PlayerSnap, ServerMsg, Snapshot, VoteSnap } from '../assets/scripts/net/Protocol'
+import { CardJ, ClientMsg, HandRecordJ, PlayerSnap, ServerMsg, Snapshot, VoteSnap } from '../assets/scripts/net/Protocol'
 import { AccountStore } from './AccountStore'
 
 /** 每个座位默认的 AI 名字（座位 0~7） */
 export const BOT_NAMES = ['小美', '阿宝', '老K', '胖虎', '大乔', '石头', '莉莉', '教授']
 const SEAT_COUNT = 8
+/** 历史记录归档上限（够整晚复盘，防止长局内存无限增长） */
+const HISTORY_MAX = 50
 /** 局末到下一手的间隔（毫秒）；自检用环境变量调快节奏 */
 const NEXT_HAND_DELAY = Number(process.env.TEXAS_NEXT_HAND_MS ?? 6000)
 /** AI 行动前的思考停顿区间（毫秒），同样可被自检覆盖 */
@@ -75,6 +77,8 @@ export class Table {
   private readonly waiting: Client[] = []
   /** 局末摊牌 / 中途弃牌亮出的底牌（座位 → 牌） */
   private readonly reveal = new Map<number, Card[]>()
+  /** 当前对局的历史手牌归档（局末写入，重置对局清空，getHistory 按需下发） */
+  private readonly handLog: HandRecordJ[] = []
   /** 摊牌后全员可见（弃牌亮牌只给仍在局内的玩家） */
   private revealAll = false
   private botTimer: ReturnType<typeof setTimeout> | null = null
@@ -123,7 +127,15 @@ export class Table {
   /** 客户端消息（join 之外的都走这里） */
   onMessage(ws: WebSocket, msg: ClientMsg): void {
     const client = this.clients.find((c) => c.ws === ws)
-    if (!client || (msg.t !== 'act' && msg.t !== 'chat' && msg.t !== 'voteReset' && msg.t !== 'showCards')) {
+    if (
+      !client ||
+      (msg.t !== 'act' && msg.t !== 'chat' && msg.t !== 'voteReset' && msg.t !== 'showCards' && msg.t !== 'getHistory')
+    ) {
+      return
+    }
+    if (msg.t === 'getHistory') {
+      // 最新在前：面板直接从上往下翻最近的手牌
+      this.send(client, { t: 'history', hands: [...this.handLog].reverse() })
       return
     }
     if (msg.t === 'chat') {
@@ -302,6 +314,7 @@ export class Table {
     }
     this.reveal.clear()
     this.revealAll = false
+    this.handLog.length = 0
     this.handOver = true
     this.engine = new GameEngine()
     BOT_NAMES.forEach((name) => this.engine.addPlayer(name, true))
@@ -388,6 +401,7 @@ export class Table {
           }
         })
       }
+      this.logHand()
       if (this.clients.length > 0) {
         this.nextTimer = setTimeout(() => {
           this.nextTimer = null
@@ -664,6 +678,34 @@ export class Table {
     const winners: number[] = []
     unique.forEach((id) => winners.push(id))
     return { title, lines, winners }
+  }
+
+  /**
+   * 局末归档一手记录（对局记录面板用）：标题与明细复用结算横幅口径；
+   * 赢家底牌总是收录——摊牌本就全员可见，弃牌收局的赢家牌做事后复盘（局已结束，无信息优势）。
+   */
+  private logHand(): void {
+    const awards = this.engine.lastAwards
+    const built = this.buildAwards()
+    if (awards.length === 0 || !built) {
+      return
+    }
+    const unique = new Set<number>()
+    awards.forEach((a) => a.winners.forEach((w) => unique.add(w.id)))
+    const winners = [...unique].map((id) => ({
+      name: this.seatName(id),
+      hole: this.engine.players[id].hole.map(toCardJ),
+    }))
+    this.handLog.push({
+      handNo: this.engine.handNo,
+      title: built.title,
+      lines: built.lines,
+      community: this.engine.community.map(toCardJ),
+      winners,
+    })
+    if (this.handLog.length > HISTORY_MAX) {
+      this.handLog.shift()
+    }
   }
 }
 

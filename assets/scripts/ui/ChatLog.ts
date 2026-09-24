@@ -11,7 +11,7 @@ import {
   UITransform,
   Vec3,
 } from "cc";
-import { createLabel, createNode, drawGlassPanel, THEME } from "./Theme";
+import { createGlassButton, createLabel, createNode, drawGlassPanel, THEME } from "./Theme";
 import { attachImage, uiFrame } from "./UiRes";
 
 /** 面板尺寸与素材横图等比（~1.43:1） */
@@ -23,7 +23,7 @@ const ROW_H = 34;
 
 /**
  * 左下角牌桌聊天面板（素材图底）：金边深绿面板，
- * 顶部标题胶囊、中部消息视口（可拖动滚动）、底部输入行（回车或点纸飞机发送）。
+ * 顶部标题胶囊、中部消息视口（可拖动滚动）、底部输入行（失焦或点「发送」按钮提交）。
  * 行的可见性由 relayout 手动控制 + 视口 Mask 像素级裁剪双保险。
  */
 export class ChatLog {
@@ -76,8 +76,8 @@ export class ChatLog {
     const ph = createLabel(editNode, "说点什么…", 12, THEME.textDim);
     ph.node.setPosition(-80, 0);
     ph.node.anchorX = 0;
-    const tl = createLabel(editNode, "", 20, THEME.textBright);
-    tl.node.setPosition(-80, -8);
+    const tl = createLabel(editNode, "", 15, THEME.textBright);
+    tl.node.setPosition(-80, -3);
     tl.node.anchorX = 0;
     eb.placeholderLabel = ph;
     eb.textLabel = tl;
@@ -97,10 +97,10 @@ export class ChatLog {
       eb.string = "";
     };
     editNode.on(EditBox.EDITING_DID_ENDED, submit);
-    // 发送：图内右侧纸飞机图标位置放透明触摸区
-    const send = createNode("send", this.node, 50, 26);
-    send.setPosition(82, -66);
-    send.on(Node.EventType.TOUCH_END, submit);
+    // 发送：实体玻璃按钮盖住素材里的表情 / 纸飞机小图标（原图标太小难点中），触控面积大幅放大
+    const send = createGlassButton(this.node, "发送", 88, 36, 16, THEME.goldBright);
+    send.node.setPosition(89, -64);
+    send.node.on(Node.EventType.TOUCH_END, submit);
   }
 
   /** 追加一条发言（说话人金色高亮），滚到底部显示 */

@@ -4,6 +4,7 @@ import { GameEngine } from "../core/GameEngine";
 import { Player } from "../core/Player";
 import { ActKind, GameEvent, Phase, PotAward } from "../core/Types";
 import { isOnlineMode } from "../net/NetClient";
+import { HandRecordJ } from "../net/Protocol";
 import { runLogicSelfTests } from "../tests/LogicSelfTest";
 import { ActionBar } from "./ActionBar";
 import { hideBootSplash, settle, setupBootDom } from "./Boot";
@@ -13,6 +14,7 @@ import { ChatLog } from "./ChatLog";
 import { CommunityView } from "./CommunityView";
 import { EndBar } from "./EndBar";
 import { buildHeroHint } from "./HeroHint";
+import { HistoryPanel } from "./HistoryPanel";
 import { loadIconFont } from "./IconFont";
 import { MessageBar } from "./MessageBar";
 import { OnlineGameApp } from "./OnlineGameApp";
@@ -52,6 +54,10 @@ export class GameApp extends Component {
   private tableView!: TableView;
   /** 主动亮牌按钮（自己的手牌旁，一手一次） */
   private showBtn!: SimpleButton;
+  /** 对局记录悬浮框（打开时创建，关闭即销毁） */
+  private historyPanel: HistoryPanel | null = null;
+  /** 本局历史手牌归档（最新在前，重开对局清空；与服务器口径一致） */
+  private readonly handRecords: HandRecordJ[] = [];
 
   onLoad(): void {
     this.ensureUnderCanvas();
@@ -92,6 +98,7 @@ export class GameApp extends Component {
   }
 
   private startMatch(): void {
+    this.handRecords.length = 0;
     this.engine = new GameEngine();
     this.engine.on((ev) => this.onEngineEvent(ev));
     this.engine.addPlayer("你", false);
@@ -140,6 +147,19 @@ export class GameApp extends Component {
     this.showBtn.node.on(Node.EventType.TOUCH_END, () => this.showMyCards());
     this.showBtn.node.active = false;
     this.winFx = new WinFx(this.node);
+    // 对局记录：左上角入口（4 人桌左上空旷，不与座位 2 / 3 的横幅和计时胶囊相撞）
+    const histBtn = createGlassButton(this.node, "对局记录", 104, 34, 15, THEME.goldBright);
+    histBtn.node.setPosition(-540, 280);
+    histBtn.node.on(Node.EventType.TOUCH_END, () => this.openHistory());
+  }
+
+  /** 打开对局记录悬浮框（单机：直接展示本地归档） */
+  private openHistory(): void {
+    this.historyPanel?.hide();
+    this.historyPanel = new HistoryPanel(this.node, () => {
+      this.historyPanel = null;
+    });
+    this.historyPanel.show(this.handRecords);
   }
 
   private onEngineEvent(ev: GameEvent): void {
@@ -302,13 +322,29 @@ export class GameApp extends Component {
         })
         .join("，");
     }
-    this.messages.showBanner(
-      bannerTitle,
-      this.engine.lastAwards.map((a) => {
-        const names = a.winners.map((w) => w.name).join("、");
-        return `${potLabel(a)} ${a.amount} ${names}${a.handDesc ? `（${a.handDesc}）` : ""}`;
-      }),
-    );
+    const bannerLines = this.engine.lastAwards.map((a) => {
+      const names = a.winners.map((w) => w.name).join("、");
+      return `${potLabel(a)} ${a.amount} ${names}${a.handDesc ? `（${a.handDesc}）` : ""}`;
+    });
+    this.messages.showBanner(bannerTitle, bannerLines);
+    // 局末归档：对局记录面板用（赢家底牌事后复盘展示，与服务器口径一致）
+    const rec: HandRecordJ = {
+      handNo: this.engine.handNo,
+      title: bannerTitle,
+      lines: bannerLines,
+      community: this.engine.community.map((c) => ({ r: c.rank, s: c.suit })),
+      winners: [],
+    };
+    winners.forEach((id) => {
+      const p = this.engine.players[id];
+      rec.winners.push({ name: p.name, hole: p.hole.map((c) => ({ r: c.rank, s: c.suit })) });
+    });
+    if (rec.winners.length > 0) {
+      this.handRecords.unshift(rec);
+      if (this.handRecords.length > 50) {
+        this.handRecords.pop();
+      }
+    }
     // 金币从底池飞向赢家座位并爆开
     winners.forEach((id) =>
       this.winFx.fly(

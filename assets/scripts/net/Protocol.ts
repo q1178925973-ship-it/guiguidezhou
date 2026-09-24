@@ -51,6 +51,19 @@ export interface AwardsSnap {
   winners: number[]
 }
 
+/** 一手牌的历史记录（局末归档，对局记录面板按需拉取；重置对局后清空） */
+export interface HandRecordJ {
+  handNo: number
+  /** 结算标题（与局末横幅同口径，如「阿宝 赢得 240」或「主池 归 阿宝，边池 归 老K」） */
+  title: string
+  /** 每池明细行 */
+  lines: string[]
+  /** 本手实际翻出的公共牌 */
+  community: CardJ[]
+  /** 各赢家及其底牌（赢家视角展示：摊牌本就公开，弃牌收局做事后复盘） */
+  winners: Array<{ name: string; hole: CardJ[] }>
+}
+
 /** 重置对局投票状态（快照内下发，客户端据此渲染投票面板） */
 export interface VoteSnap {
   /** 发起者座位 */
@@ -100,6 +113,8 @@ export type ClientMsg =
   | { t: 'voteReset'; agree?: boolean }
   /** 对局中主动亮牌：底牌展示给仍在局内的玩家（一手只能亮一次，不可收回） */
   | { t: 'showCards' }
+  /** 拉取当前对局的历史记录（最新在前，观战者也可看） */
+  | { t: 'getHistory' }
 
 /** 服务器发给客户端的消息 */
 export type ServerMsg =
@@ -111,3 +126,5 @@ export type ServerMsg =
   | { t: 'state'; snap: Snapshot }
   | { t: 'say'; name: string; text: string; seat?: number; tag: 'ai' | 'chat' | 'sys' }
   | { t: 'err'; msg: string }
+  /** 对 getHistory 的应答：当前对局已归档的历史手牌（最新在前） */
+  | { t: 'history'; hands: HandRecordJ[] }

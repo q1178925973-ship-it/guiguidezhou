@@ -11,6 +11,7 @@ import { loadCardFaces } from './CardFaces'
 import { ChatLog } from './ChatLog'
 import { CommunityView } from './CommunityView'
 import { buildHeroHint } from './HeroHint'
+import { HistoryPanel } from './HistoryPanel'
 import { loadIconFont } from './IconFont'
 import { AccountDialog, AuthKind } from './AccountDialog'
 import { MessageBar } from './MessageBar'
@@ -120,6 +121,8 @@ export class OnlineGameApp extends Component {
   private voteAgreeBtn!: SimpleButton
   private voteRefuseBtn!: SimpleButton
   private resetBtn!: SimpleButton
+  /** 对局记录悬浮框（打开时创建，关闭即销毁） */
+  private historyPanel: HistoryPanel | null = null
   private voteLeft = 0
   private voteLabelBase = ''
   /** 待发送的首条认证消息（连接建立即发；认证失败可更新后重发） */
@@ -197,6 +200,19 @@ export class OnlineGameApp extends Component {
     this.winFx = new WinFx(this.node)
     this.buildTimerPill()
     this.buildVoteUi()
+    // 对局记录：左上角入口（8 人桌左上区域空旷，不与座位 5 横幅 / 计时胶囊相撞）
+    const histBtn = createGlassButton(this.node, '对局记录', 104, 34, 15, THEME.goldBright)
+    histBtn.node.setPosition(-540, 280)
+    histBtn.node.on(Node.EventType.TOUCH_END, () => this.openHistory())
+  }
+
+  /** 打开对局记录悬浮框并向服务器拉取最新归档 */
+  private openHistory(): void {
+    this.historyPanel?.hide()
+    this.historyPanel = new HistoryPanel(this.node, () => {
+      this.historyPanel = null
+    })
+    this.net.send({ t: 'getHistory' })
   }
 
   /** 行动倒计时胶囊：贴在当前行动真人座位卡片上方 */
@@ -317,6 +333,10 @@ export class OnlineGameApp extends Component {
       } else if (msg.tag === 'ai' && msg.seat !== undefined && msg.seat >= 0) {
         this.pendingSay.set(msg.seat, msg.text)
       }
+      return
+    }
+    if (msg.t === 'history') {
+      this.historyPanel?.show(msg.hands)
       return
     }
     if (msg.t === 'err') {
