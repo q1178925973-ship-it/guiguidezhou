@@ -327,17 +327,25 @@ export class GameApp extends Component {
       return `${potLabel(a)} ${a.amount} ${names}${a.handDesc ? `（${a.handDesc}）` : ""}`;
     });
     this.messages.showBanner(bannerTitle, bannerLines);
-    // 局末归档：对局记录面板用（赢家底牌事后复盘展示，与服务器口径一致）
+    // 局末归档：对局记录面板用（赢家与其余玩家底牌都做事后复盘展示，与服务器口径一致）
     const rec: HandRecordJ = {
       handNo: this.engine.handNo,
       title: bannerTitle,
       lines: bannerLines,
       community: this.engine.community.map((c) => ({ r: c.rank, s: c.suit })),
       winners: [],
+      others: [],
     };
-    winners.forEach((id) => {
-      const p = this.engine.players[id];
-      rec.winners.push({ name: p.name, hole: p.hole.map((c) => ({ r: c.rank, s: c.suit })) });
+    this.engine.players.forEach((p) => {
+      if (p.hole.length === 0) {
+        return;
+      }
+      const entry = { name: p.name, hole: p.hole.map((c) => ({ r: c.rank, s: c.suit })) };
+      if (winners.has(p.id)) {
+        rec.winners.push(entry);
+      } else {
+        rec.others.push(entry);
+      }
     });
     if (rec.winners.length > 0) {
       this.handRecords.unshift(rec);

@@ -62,6 +62,8 @@ export interface HandRecordJ {
   community: CardJ[]
   /** 各赢家及其底牌（赢家视角展示：摊牌本就公开，弃牌收局做事后复盘） */
   winners: Array<{ name: string; hole: CardJ[] }>
+  /** 其余拿到牌的玩家及底牌（复盘：摊牌输家 / 弃牌者的牌，事后展示无信息优势） */
+  others: Array<{ name: string; hole: CardJ[] }>
 }
 
 /** 重置对局投票状态（快照内下发，客户端据此渲染投票面板） */

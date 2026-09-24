@@ -113,16 +113,26 @@ export class GameEngine {
     this.emit('turn')
   }
 
+  /**
+   * 加注上限（「本轮总投入加注到」口径）：翻牌前三张公共牌未发时压到全部减一，
+   * 从规则上禁止开局梭哈（主动全下）；跟注导致的被动全下不受影响。
+   */
+  private cappedMaxTo(p: Player): number {
+    const maxTo = p.betRound + p.chips
+    return this.community.length < 3 ? Math.max(0, maxTo - 1) : maxTo
+  }
+
   /** 某玩家当前可执行的操作 */
   getLegalActs(id: number): LegalActs {
     const p = this.byId(id)
     const toCall = p ? this.currentBet - p.betRound : 0
-    const maxTo = p ? p.betRound + p.chips : 0
+    const maxTo = p ? this.cappedMaxTo(p) : 0
     return {
       canFold: !!p,
       canCheck: p ? toCall <= 0 : false,
       callAmount: p ? Math.max(0, Math.min(toCall, p.chips)) : 0,
-      canRaise: p ? p.chips > Math.max(0, toCall) : false,
+      canRaise: p ? maxTo > this.currentBet && p.chips > Math.max(0, toCall) : false,
+      canAllIn: !!p && this.community.length >= 3,
       raiseMinTo: Math.min(this.currentBet + this.minRaise, maxTo),
       raiseMaxTo: maxTo,
     }
@@ -155,9 +165,10 @@ export class GameEngine {
         break
       }
       case ActKind.Raise: {
-        const maxTo = p.betRound + p.chips
+        // 上限与 getLegalActs 同口径：翻牌前禁梭哈（主动全下直接判非法）
+        const maxTo = this.cappedMaxTo(p)
         const target = Math.floor(act.raiseTo ?? 0)
-        const isAllIn = target === maxTo
+        const isAllIn = target === p.betRound + p.chips
         const minTo = Math.min(this.currentBet + this.minRaise, maxTo)
         if (target <= this.currentBet || target > maxTo || (!isAllIn && target < minTo)) {
           return false

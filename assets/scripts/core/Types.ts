@@ -31,6 +31,8 @@ export interface LegalActs {
   canCheck: boolean
   callAmount: number
   canRaise: boolean
+  /** 主动全下（梭哈）是否可用：翻牌前三张公共牌未发时为 false（被动跟注全下不受限） */
+  canAllIn: boolean
   raiseMinTo: number
   raiseMaxTo: number
 }

@@ -549,7 +549,9 @@ export class Table {
   // ---------- 内部：广播与序列化 ----------
 
   private seatName(seat: number): string {
-    return this.seatClient[seat]?.name ?? this.seatAccount[seat] ?? BOT_NAMES[seat]
+    // 真人不在线（断线托管中，含账号座位保留期）：一律显示机器人名，
+    // 避免聊天发言是机器人名字、玩家卡片却还是玩家名字的出戏
+    return this.seatClient[seat]?.name ?? BOT_NAMES[seat]
   }
 
   /** 系统消息 seat 传 -1；tag 区分 AI 台词 / 真人聊天 / 系统提示（客户端展示方式不同） */
@@ -682,7 +684,7 @@ export class Table {
 
   /**
    * 局末归档一手记录（对局记录面板用）：标题与明细复用结算横幅口径；
-   * 赢家底牌总是收录——摊牌本就全员可见，弃牌收局的赢家牌做事后复盘（局已结束，无信息优势）。
+   * 赢家与其余玩家的底牌都收录——摊牌本就全员可见，弃牌收局做事后复盘（局已结束，无信息优势）。
    */
   private logHand(): void {
     const awards = this.engine.lastAwards
@@ -692,16 +694,21 @@ export class Table {
     }
     const unique = new Set<number>()
     awards.forEach((a) => a.winners.forEach((w) => unique.add(w.id)))
-    const winners = [...unique].map((id) => ({
+    const ofSeat = (id: number) => ({
       name: this.seatName(id),
       hole: this.engine.players[id].hole.map(toCardJ),
-    }))
+    })
+    const winners = [...unique].map(ofSeat)
+    const others = this.engine.players
+      .filter((p) => p.hole.length > 0 && !unique.has(p.id))
+      .map((p) => ofSeat(p.id))
     this.handLog.push({
       handNo: this.engine.handNo,
       title: built.title,
       lines: built.lines,
       community: this.engine.community.map(toCardJ),
       winners,
+      others,
     })
     if (this.handLog.length > HISTORY_MAX) {
       this.handLog.shift()

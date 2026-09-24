@@ -314,9 +314,10 @@ async function runSelftest(): Promise<void> {
           h0.handNo > 0 &&
           h0.title.length > 0 &&
           Array.isArray(h0.community) &&
+          Array.isArray(h0.others) &&
           h0.winners.length > 0 &&
           h0.winners.every((w) => w.hole.length === 2),
-        '记录含手数 / 标题 / 公共牌 / 赢家底牌',
+        '记录含手数 / 标题 / 公共牌 / 赢家底牌 / 其余玩家',
       )
       check(
         (zhang.hist ?? []).every((h, i) => i === 0 || (zhang.hist ?? [])[i - 1].handNo > h.handNo),
@@ -325,12 +326,25 @@ async function runSelftest(): Promise<void> {
       const mySeat = zhang.welcome?.seat ?? -1
       zhang.ws.close()
       await sleep(800)
+      // 断线托管：座位名牌应立即换成机器人名（与聊天/台词口径一致，不出戏）
+      const watcher = await connectAuth(PORT + 1, { t: 'join', name: '旁观者' })
+      await waitFor(() => !!watcher.latest, 8000)
+      check(
+        (watcher.latest?.players[mySeat]?.name ?? '张三') !== '张三',
+        `断线托管后名牌立即换机器人名（实际 ${watcher.latest?.players[mySeat]?.name}）`,
+      )
+      watcher.ws.close()
       const back = await connectAuth(PORT + 1, { t: 'login', token: zhang.token })
       const reclaimed = await waitFor(
         () => back.welcome?.seat === mySeat && back.sysTexts.some((t) => t.includes('找回')),
         8000,
       )
       check(reclaimed, `token 重登找回原座位（seat=${mySeat}）`)
+      await waitFor(() => back.latest?.players[mySeat]?.name === '张三', 8000)
+      check(
+        back.latest?.players[mySeat]?.name === '张三',
+        `找回座位后名牌恢复玩家名（实际 ${back.latest?.players[mySeat]?.name}）`,
+      )
       // 全新连接账密登录：生涯战绩应已持久化（played>=2）
       const again = await connectAuth(PORT + 1, { t: 'login', name: '张三', pass: '秘密123' })
       await waitFor(() => again.authPlayed >= 2, 10000)

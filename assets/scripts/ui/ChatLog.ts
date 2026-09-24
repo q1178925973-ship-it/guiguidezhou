@@ -1,4 +1,5 @@
 import {
+  Color,
   EditBox,
   EventTouch,
   Graphics,
@@ -11,7 +12,7 @@ import {
   UITransform,
   Vec3,
 } from "cc";
-import { createGlassButton, createLabel, createNode, drawGlassPanel, THEME } from "./Theme";
+import { createButton, createLabel, createNode, drawGlassPanel, THEME } from "./Theme";
 import { attachImage, uiFrame } from "./UiRes";
 
 /** 面板尺寸与素材横图等比（~1.43:1） */
@@ -97,9 +98,9 @@ export class ChatLog {
       eb.string = "";
     };
     editNode.on(EditBox.EDITING_DID_ENDED, submit);
-    // 发送：实体玻璃按钮盖住素材里的表情 / 纸飞机小图标（原图标太小难点中），触控面积大幅放大
-    const send = createGlassButton(this.node, "发送", 88, 36, 16, THEME.goldBright);
-    send.node.setPosition(89, -64);
+    // 发送：黑底黄字实体按钮盖住素材里的表情 / 纸飞机小图标（原图标太小难点中），触控面积大幅放大
+    const send = createButton(this.node, "发送", 88, 36, new Color(12, 14, 20, 235), 16, THEME.goldBright);
+    send.node.setPosition(89, -69);
     send.node.on(Node.EventType.TOUCH_END, submit);
   }
 

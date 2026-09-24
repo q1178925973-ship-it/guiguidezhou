@@ -145,7 +145,8 @@ export class ActionBar {
     const canRaise = legal.canRaise;
     this.tierHost.active = canRaise;
     this.raiseBtn.node.active = canRaise;
-    this.allinBtn.node.active = canRaise;
+    // 翻牌前三张未发：梭哈按钮收起（引擎同时在规则层拒绝主动全下）
+    this.allinBtn.node.active = canRaise && legal.canAllIn;
     if (canRaise) {
       this.refreshTiers(legal, ctx);
       this.selectTier(0);
