@@ -14,6 +14,8 @@ export interface Room {
   id: string
   name: string
   table: Table
+  /** 首次变为可回收（无人无连接无保留座）的时刻；0 = 当前不可回收。空置满一个 GC 周期才删，保证退房后有稳定的重进窗口 */
+  emptySince: number
 }
 
 /** 已认证连接的登录身份（attach 时登记，建房默认名 / 跨房顶号 / mine 标记用） */
@@ -137,7 +139,7 @@ export class RoomManager {
     const tier = BLIND_TIERS[Math.max(0, Math.min(BLIND_TIERS.length - 1, tierRaw))]
     const name = sanitizeRoomName(rawName) || `${sanitizePlayerName(meta.name)}的房间`
     const table = new Table(this.store, { seatCount: seats, ...tier }, () => this.markDirty())
-    const room: Room = { id, name, table }
+    const room: Room = { id, name, table, emptySince: 0 }
     this.rooms.set(id, room)
     this.joinRoom(ws, id)
   }
@@ -234,11 +236,20 @@ export class RoomManager {
     }, PUSH_DEBOUNCE)
   }
 
-  /** 回收空房：无在座真人、无任何连接、无未过期保留座（先收集后删，避免遍历时增删 Map） */
+  /** 回收空房：无在座真人、无任何连接、无未过期保留座，且空置已满一个 GC 周期（先收集后删，避免遍历时增删 Map） */
   private gc(): void {
+    const now = Date.now()
     const doomed: Room[] = []
     for (const room of this.rooms.values()) {
-      if (room.table.humans === 0 && room.table.clientCount === 0 && !room.table.hasReservations()) {
+      const collectible = room.table.humans === 0 && room.table.clientCount === 0 && !room.table.hasReservations()
+      if (!collectible) {
+        room.emptySince = 0
+        continue
+      }
+      // 首次发现只记时刻，满一个周期再删：退房后的房间不会在任意秒数后突然从列表消失
+      if (room.emptySince === 0) {
+        room.emptySince = now
+      } else if (now - room.emptySince >= ROOM_GC_MS) {
         doomed.push(room)
       }
     }
