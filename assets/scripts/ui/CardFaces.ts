@@ -2,14 +2,13 @@ import { Rect, Size, SpriteFrame, Texture2D, resources } from 'cc'
 import { Card, Suit } from '../core/Card'
 
 /**
- * 牌面雪碧图（assets/resources/cards.png，1440×1320 = 9 列 × 6 行，每格 160×220）。
+ * 牌面雪碧图（assets/resources/cards.webp，9 列 × 6 行 = 54 格，格子尺寸按图幅比例推导）。
  * 行优先排列：♠A~K → ♥A~K → ♣A~K → ♦A~K → 大王 → 小王。
- * 同时加载牌背（assets/resources/card-back.png）。
+ * 同时加载牌背（assets/resources/card-back.webp）。
  * 启动时加载并切片，CardView 优先用它们显示牌面 / 牌背。
  */
 const GRID_COLS = 9
-const CELL_W = 160
-const CELL_H = 220
+const GRID_ROWS = 6
 const CELL_COUNT = 54
 
 /** 各花色在雪碧图中的起始下标 */
@@ -52,19 +51,16 @@ function loadTexture(name: string): Promise<Texture2D | null> {
   })
 }
 
-/** 把整张雪碧图切成 54 个 SpriteFrame（rect 原点在图片左上角） */
+/** 把整张雪碧图切成 54 个 SpriteFrame（格子尺寸 = 图幅 / 网格数，任意分辨率图源通用） */
 function sliceSheet(tex: Texture2D): SpriteFrame[] {
+  const cw = tex.width / GRID_COLS
+  const ch = tex.height / GRID_ROWS
   const list: SpriteFrame[] = []
   for (let i = 0; i < CELL_COUNT; i++) {
     const frame = new SpriteFrame()
     frame.texture = tex
-    frame.rect = new Rect(
-      (i % GRID_COLS) * CELL_W,
-      Math.floor(i / GRID_COLS) * CELL_H,
-      CELL_W,
-      CELL_H,
-    )
-    frame.originalSize = new Size(CELL_W, CELL_H)
+    frame.rect = new Rect((i % GRID_COLS) * cw, Math.floor(i / GRID_COLS) * ch, cw, ch)
+    frame.originalSize = new Size(cw, ch)
     frame.packable = false
     list.push(frame)
   }

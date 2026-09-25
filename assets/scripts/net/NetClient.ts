@@ -15,6 +15,12 @@ export function resolveServerUrl(): string {
     return custom
   }
   if (location.protocol.startsWith('http')) {
+    // Creator 预览页（如 localhost:7456）与服务器（8080）不同源：
+    // 本机开发且端口对不上时直连本地 8080，省去每次给预览地址手动加 ?server=
+    const isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+    if (isLocal && location.port && location.port !== '8080') {
+      return `ws://${location.hostname}:8080`
+    }
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${proto}//${location.host}`
   }

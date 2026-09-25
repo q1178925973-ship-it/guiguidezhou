@@ -17,9 +17,10 @@ export interface SeatLayoutEntry {
  * 让筹码堆一眼归属到下注者，不再散在桌面中环与公共牌 / 底池混在一起。
  */
 
-/** 四人桌布局（单机模式用）：左（莉莉位）/ 顶（大乔位）/ 右（老K位）取效果图锚点 */
+/** 四人桌布局（单机模式用）：左（莉莉位）/ 顶（大乔位）/ 右（老K位）取效果图锚点。
+ * 0 号位（自己）X 取 74 = 实测 +30：名牌挂在牌左侧，锚点 44 时整组视觉偏左不居中 */
 export const SEAT_LAYOUT: SeatLayoutEntry[] = [
-  { pos: new Vec3(44, -130, 0), bet: new Vec3(0, 75, 0), faceUp: true },
+  { pos: new Vec3(74, -130, 0), bet: new Vec3(0, 75, 0), faceUp: true },
   { pos: new Vec3(-397, 82, 0), bet: new Vec3(97, 0, 0), faceUp: false },
   { pos: new Vec3(80, 263, 0), bet: new Vec3(0, -68, 0), faceUp: false },
   { pos: new Vec3(574, 82, 0), bet: new Vec3(-276, 0, 0), faceUp: false },
@@ -31,7 +32,7 @@ export const SEAT_LAYOUT: SeatLayoutEntry[] = [
  * 5 石头左上 / 6 莉莉左中 / 7 教授左下。
  */
 export const SEAT_LAYOUT_8: SeatLayoutEntry[] = [
-  { pos: new Vec3(44, -130, 0), bet: new Vec3(0, 75, 0), faceUp: true },
+  { pos: new Vec3(74, -130, 0), bet: new Vec3(0, 75, 0), faceUp: true },
   { pos: new Vec3(448, -43, 0), bet: new Vec3(0, -68, 0), faceUp: false },
   { pos: new Vec3(574, 82, 0), bet: new Vec3(-276, 0, 0), faceUp: false },
   { pos: new Vec3(425, 212, 0), bet: new Vec3(-235, -67, 0), faceUp: false },
@@ -47,6 +48,45 @@ export const PHASE_NAMES: Partial<Record<Phase, string>> = {
   [Phase.Flop]: '翻牌',
   [Phase.Turn]: '转牌',
   [Phase.River]: '河牌',
+}
+
+/**
+ * 按桌大小给布局：4/8 人用实测表，其余（3/5/6/7）用椭圆拟合。
+ * 椭圆参数取自 8 人表 8 锚点的拟合：中心 (81,80)、rx 494、ry 195；
+ * 座位 i 角度 θ = -90° + i·360°/n（0 号位在正下方，随 n 增大逆时针铺开），
+ * 0 号位仍钉在实测 (74,-130)（与 4/8 人表一致，自己永远在下方）。
+ * 下注点 = 座位指向桌心方向 70（首版统一模长，实测表是 68~75 一带）。
+ */
+export function seatLayoutFor(n: number): SeatLayoutEntry[] {
+  if (n === 8) {
+    return SEAT_LAYOUT_8
+  }
+  if (n === 4) {
+    return SEAT_LAYOUT
+  }
+  const count = Math.max(3, Math.min(8, Math.round(n)))
+  const cx = 81
+  const cy = 80
+  const rx = 494
+  const ry = 195
+  const list: SeatLayoutEntry[] = []
+  for (let i = 0; i < count; i++) {
+    const th = (-90 + (i * 360) / count) * (Math.PI / 180)
+    const pos =
+      i === 0
+        ? new Vec3(74, -130, 0)
+        : new Vec3(Math.round(cx + rx * Math.cos(th)), Math.round(cy + ry * Math.sin(th)), 0)
+    // 下注方向：座位 → 桌心，统一模长 70
+    const dx = cx - pos.x
+    const dy = cy - pos.y
+    const len = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+    list.push({
+      pos,
+      bet: new Vec3(Math.round((dx / len) * 70), Math.round((dy / len) * 70), 0),
+      faceUp: i === 0,
+    })
+  }
+  return list
 }
 
 /** 动作文案（座位气泡显示）；betRound 为该玩家本轮总投入（跟注口径），chips 用于判定全下 */

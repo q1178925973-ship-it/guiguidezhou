@@ -145,7 +145,8 @@ function buildPrompt(engine: GameEngine, botId: number): string {
     `我的筹码：${me.chips}，本轮已下注：${me.betRound}，当前最高注：${engine.currentBet}，底池：${pot}`,
     `对手：${opponents}`,
     `可选动作：${options.join('；')}`,
-    '请决策并只输出 JSON：{"action":"fold|check|call|raise","raiseTo":整数,"say":"台词"}（台词不要用 emoji 和颜文字）',
+    '台词要演：偷鸡、钓鱼、虚张声势、谎报手牌、挑衅都行，但绝不能说漏自己的真实牌力，不要用 emoji 和颜文字',
+    '请决策并只输出 JSON：{"action":"fold|check|call|raise","raiseTo":整数,"say":"台词"}',
   ].join('\n')
 }
 

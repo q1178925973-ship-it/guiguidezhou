@@ -1,10 +1,10 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
-import { existsSync, readFileSync, statSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { extname, join, normalize, resolve } from 'path'
-import { gzipSync } from 'zlib'
+import { brotliCompressSync, gzipSync } from 'zlib'
 import { WebSocket, WebSocketServer } from 'ws'
 import { AccountStore } from './AccountStore'
-import { Table } from './Table'
+import { RoomManager } from './RoomManager'
 import { ClientMsg, ServerMsg } from '../assets/scripts/net/Protocol'
 
 /**
@@ -22,6 +22,7 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
@@ -36,18 +37,21 @@ const MIME: Record<string, string> = {
   '.wav': 'audio/wav',
 }
 
-/** 可 gzip 的文本类资源（png / wasm 本身已是压缩格式，跳过） */
+/** 可压缩的文本类资源（png / webp / wasm 本身已是压缩格式，跳过） */
 const GZIP_EXTS = new Set(['.html', '.js', '.css', '.json', '.svg', '.ttf', '.ico'])
 
-/** gzip 结果缓存（键：路径 + mtime），避免每次请求重复压缩 */
-const gzipCache = new Map<string, { mtime: number; data: Buffer }>()
+/** 压缩结果缓存（键：编码:路径 + mtime），避免每次请求重复压缩 */
+const zipCache = new Map<string, { mtime: number; data: Buffer }>()
 
 /** 二进制资源缓存 7 天；文本类（文件名不带 hash）只缓存 10 分钟保证发版及时生效 */
-const LONG_CACHE = new Set(['.png', '.jpg', '.jpeg', '.svg', '.ico', '.ttf', '.woff', '.woff2', '.wasm', '.bin', '.mp3', '.ogg', '.wav'])
+const LONG_CACHE = new Set(['.png', '.webp', '.jpg', '.jpeg', '.svg', '.ico', '.ttf', '.woff', '.woff2', '.wasm', '.bin', '.mp3', '.ogg', '.wav'])
+
+/** md5Cache 构建的文件名自带内容哈希（Cocos 默认 5 位 hex，点或短横线分隔，如 xxx.30235.js / _virtual_cc-5d09224f.js）：内容永不变，可缓存一年 */
+const HASHED_NAME = /[-.][0-9a-f]{5,10}\.[a-z0-9]+$/
 
 /**
- * 伺服静态文件：文本类按 Accept-Encoding 回 gzip；
- * index.html 走 no-cache，二进制长缓存，其余短缓存。
+ * 伺服静态文件：文本类按 Accept-Encoding 回 brotli（更小）或 gzip；
+ * index.html 走 no-cache，带哈希文件名缓存一年（immutable），二进制长缓存，其余短缓存。
  */
 function serveFile(req: IncomingMessage, res: ServerResponse, filePath: string): void {
   const ext = extname(filePath).toLowerCase()
@@ -55,22 +59,33 @@ function serveFile(req: IncomingMessage, res: ServerResponse, filePath: string):
   try {
     const stat = statSync(filePath)
     const data = readFileSync(filePath)
+    const accept = req.headers['accept-encoding'] ?? ''
+    const enc = GZIP_EXTS.has(ext)
+      ? accept.includes('br')
+        ? 'br'
+        : accept.includes('gzip')
+          ? 'gzip'
+          : ''
+      : ''
     const headers: Record<string, string> = {
       'Content-Type': type,
       'Cache-Control':
         ext === '.html'
           ? 'no-cache'
-          : LONG_CACHE.has(ext)
-            ? 'public, max-age=604800'
-            : 'public, max-age=600',
+          : HASHED_NAME.test(filePath)
+            ? 'public, max-age=31536000, immutable'
+            : LONG_CACHE.has(ext)
+              ? 'public, max-age=604800'
+              : 'public, max-age=600',
     }
-    if ((req.headers['accept-encoding'] ?? '').includes('gzip') && GZIP_EXTS.has(ext)) {
-      let hit = gzipCache.get(filePath)
+    if (enc) {
+      const key = `${enc}:${filePath}`
+      let hit = zipCache.get(key)
       if (!hit || hit.mtime !== stat.mtimeMs) {
-        hit = { mtime: stat.mtimeMs, data: gzipSync(data, { level: 6 }) }
-        gzipCache.set(filePath, hit)
+        hit = { mtime: stat.mtimeMs, data: enc === 'br' ? brotliCompressSync(data) : gzipSync(data, { level: 6 }) }
+        zipCache.set(key, hit)
       }
-      headers['Content-Encoding'] = 'gzip'
+      headers['Content-Encoding'] = enc
       headers['Content-Length'] = String(hit.data.length)
       res.writeHead(200, headers)
       res.end(hit.data)
@@ -92,6 +107,17 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     res.end(`ok players-table running`)
     return
   }
+  // 引擎减负：本项目零物理、零 spine，用合法的空 SystemJS 模块顶替引擎启动期
+  // 预载的这两类 wasm/asm 模块（首屏省约 2.3MB）。引擎侧拿到空导出会走各自的
+  // 失败 catch，只在控制台留一两行无害提示，游戏完全不受影响。
+  if (/^\/cocos-js\/(assets\/)?(bullet|spine)/.test(url.pathname)) {
+    res.writeHead(200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    })
+    res.end('System.register([],(function(){"use strict";return{execute:function(){}}}))')
+    return
+  }
   if (!existsSync(WEB_DIR)) {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('德州扑克服务器运行中：web/ 目录还没有构建产物，请上传 Cocos web 构建输出')
@@ -108,6 +134,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     filePath = join(filePath, 'index.html')
   }
   if (!existsSync(filePath)) {
+    // md5Cache 构建会把文件重命名为带哈希（xxx.30235.js），但自定义 index.html 模板里
+    // 写的是不带哈希的固定名（src/polyfills.bundle.js 等）：无哈希请求重定向到带哈希文件，
+    // 浏览器随后的缓存命中走 immutable 一年强缓存
+    const hashed = findHashedFile(filePath)
+    if (hashed) {
+      const rel = hashed.slice(WEB_DIR.length).split('\\').join('/')
+      res.writeHead(307, { Location: encodeURI(rel), 'Cache-Control': 'no-cache' })
+      res.end()
+      return
+    }
     // 单页回退：带查询参数的未知路径也回首页（?online=1 等由前端解析）
     filePath = join(WEB_DIR, 'index.html')
     if (!existsSync(filePath)) {
@@ -119,10 +155,38 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   serveFile(req, res, filePath)
 })
 
+/** 无哈希路径 → 带哈希文件 的映射表（启动时扫一遍 web/，重部署后随服务重启重建） */
+let hashedFileMap: Map<string, string> | null = null
+function findHashedFile(filePath: string): string | null {
+  if (!hashedFileMap) {
+    hashedFileMap = new Map()
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name)
+        if (statSync(full).isDirectory()) {
+          walk(full)
+          continue
+        }
+        const m = name.match(/^(.+?)[-.]([0-9a-f]{5,10})(\.[a-z0-9]+)$/)
+        if (m) {
+          hashedFileMap.set(normalize(join(dir, `${m[1]}${m[3]}`)), full)
+        }
+      }
+    }
+    try {
+      walk(WEB_DIR)
+    } catch {
+      /* 目录异常时保持空表，走原回退逻辑 */
+    }
+  }
+  return hashedFileMap.get(filePath) ?? null
+}
+
 const wss = new WebSocketServer({ server })
 // 账号库：默认落在 data/accounts.db；自检用 TEXAS_DB=:memory: 隔离
 const store = new AccountStore(process.env.TEXAS_DB ?? join(__dirname, 'data', 'accounts.db'))
-const table = new Table(store)
+// 多房间：认证后进大厅，createRoom / joinRoom 入房（连接状态机 idle → 大厅 ⇄ 房间）
+const rooms = new RoomManager(store)
 
 wss.on('connection', (ws: WebSocket) => {
   let joined = false
@@ -159,21 +223,27 @@ wss.on('connection', (ws: WebSocket) => {
         played: r.account.played,
       })
       joined = true
-      table.join(ws, r.account.name, r.account.name)
+      rooms.attach(ws, r.account.name, r.account.name)
       return
     }
     if (msg.t === 'join') {
       if (!joined) {
         joined = true
-        table.join(ws, msg.name, null)
+        rooms.attach(ws, String(msg.name ?? ''), null)
       }
       return
     }
-    if (joined) {
-      table.onMessage(ws, msg)
+    if (!joined) {
+      return
     }
+    // 房间命令（任意态）：listRooms / createRoom / joinRoom / leaveRoom
+    if (rooms.handleCommand(ws, msg)) {
+      return
+    }
+    // 牌桌内消息：act / chat / voteReset / showCards / getHistory（大厅态静默丢弃）
+    rooms.forward(ws, msg)
   })
-  ws.on('close', () => table.leave(ws))
+  ws.on('close', () => rooms.handleClose(ws))
   ws.on('error', () => undefined)
 })
 

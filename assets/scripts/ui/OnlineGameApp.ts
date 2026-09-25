@@ -1,12 +1,12 @@
-import { _decorator, Component, Graphics, Label, Node, Tween, tween, UIOpacity, Vec3 } from 'cc'
+import { _decorator, Component, Graphics, input, Input, Label, Node, Tween, tween, UIOpacity, Vec3 } from 'cc'
 import { Card } from '../core/Card'
 import { Player } from '../core/Player'
 import { Act } from '../core/Types'
 import { CardJ, PlayerSnap, ServerMsg, Snapshot } from '../net/Protocol'
 import { NetClient } from '../net/NetClient'
 import { ActionBar } from './ActionBar'
-import { hideBootSplash, settle, setupBootDom } from './Boot'
-import { createFullscreenToggle } from './FullscreenBtn'
+import { Bgm } from './Bgm'
+import { hideBootSplash, settle, setupBootDom, toggleFullscreen } from './Boot'
 import { loadCardFaces } from './CardFaces'
 import { ChatLog } from './ChatLog'
 import { CommunityView } from './CommunityView'
@@ -14,12 +14,16 @@ import { buildHeroHint } from './HeroHint'
 import { HistoryPanel } from './HistoryPanel'
 import { loadIconFont } from './IconFont'
 import { AccountDialog, AuthKind } from './AccountDialog'
+import { CreateRoomDialog } from './CreateRoomDialog'
+import { Lobby } from './Lobby'
 import { MessageBar } from './MessageBar'
-import { createSoundToggle, SoundFx } from './SoundFx'
+import { SoundFx } from './SoundFx'
 import { SeatView } from './SeatView'
-import { describeAct, SEAT_LAYOUT_8 } from './SeatLayout'
+import { Toolbar } from './Toolbar'
+import { describeAct, SEAT_LAYOUT_8, seatLayoutFor, SeatLayoutEntry } from './SeatLayout'
 import { DECK_POS, TABLE_CENTER, TableView } from './TableView'
 import { attachImage, loadUiRes, uiFrame } from './UiRes'
+import { loadHomeUi } from './HomeUi'
 import { WinFx } from './WinFx'
 import { createGlassButton, createLabel, createNode, drawGlassPanel, shade, SimpleButton, THEME } from './Theme'
 
@@ -83,10 +87,14 @@ function saveName(name: string): void {
 export class OnlineGameApp extends Component {
   private readonly net = new NetClient()
   private readonly sfx = new SoundFx()
+  /** 背景音乐：不进首包，首次触摸后从部署服务器懒加载 */
+  private bgm!: Bgm
   private readonly seats: SeatView[] = []
   private community!: CommunityView
   private actionBar!: ActionBar
   private messages!: MessageBar
+  /** 右上角一体化工具条：手数徽标 + 音效 / 全屏 / 记录 / 重置（发起投票） */
+  private toolbar!: Toolbar
   private chatLog!: ChatLog
   private winFx!: WinFx
   private dealerMark!: Node
@@ -120,7 +128,6 @@ export class OnlineGameApp extends Component {
   private voteText!: Label
   private voteAgreeBtn!: SimpleButton
   private voteRefuseBtn!: SimpleButton
-  private resetBtn!: SimpleButton
   /** 对局记录悬浮框（打开时创建，关闭即销毁） */
   private historyPanel: HistoryPanel | null = null
   private voteLeft = 0
@@ -132,13 +139,28 @@ export class OnlineGameApp extends Component {
   }
   /** 打开中的账号弹窗（auth-ok 后关闭） */
   private accountDialog: AccountDialog | null = null
+  /** 打开中的建房弹窗 */
+  private createDialog: CreateRoomDialog | null = null
+
+  // ---------- 多房间双态：lobby ⇄ room ----------
+  /** 当前态：大厅（默认）/ 房间 */
+  private mode: 'lobby' | 'room' = 'lobby'
+  /** 房间 UI 根（座位 / 公共牌 / 操作条 / 工具条 / 聊天…），大厅态整体隐藏 */
+  private tableRoot!: Node
+  /** 大厅 UI 根 */
+  private lobbyRoot!: Node
+  private lobby!: Lobby
+  /** 当前房间信息（roomJoined 带回；大厅为 null） */
+  private roomInfo: Extract<ServerMsg, { t: 'roomJoined' }> | null = null
+  /** 当前座位布局：8 人默认，进房按人数重建（3~8） */
+  private curLayout: SeatLayoutEntry[] = SEAT_LAYOUT_8
 
   onLoad(): void {
     setupBootDom()
     // 关键顺序：UI 素材异步加载，必须等帧缓存就绪后再构建界面，
     // 否则 uiFrame() 全部取不到、界面整体回退成代码绘制的兜底样式
     this.tableView = new TableView(this.node)
-    settle([loadCardFaces(), loadIconFont(), loadUiRes(), this.tableView.ready]).then(() => {
+    settle([loadCardFaces(), loadIconFont(), loadUiRes(), loadHomeUi(), this.tableView.ready]).then(() => {
       this.buildUi()
       hideBootSplash()
       this.askAccount()
@@ -162,9 +184,13 @@ export class OnlineGameApp extends Component {
   }
 
   private buildUi(): void {
+    // 双态根：桌子 UI 与大厅 UI 各自成树，切房 / 回大厅整体显隐
+    this.tableRoot = createNode('tableRoot', this.node)
+    this.lobbyRoot = createNode('lobbyRoot', this.node)
+    this.seats.length = 0
     SEAT_LAYOUT_8.forEach((s, i) => {
       this.seats.push(
-        new SeatView(this.node, '', {
+        new SeatView(this.tableRoot, '', {
           pos: s.pos,
           betOffset: s.bet,
           colorIndex: i,
@@ -172,9 +198,9 @@ export class OnlineGameApp extends Component {
         }),
       )
     })
-    this.community = new CommunityView(this.node, new Vec3(TABLE_CENTER.x, TABLE_CENTER.y, 0))
+    this.community = new CommunityView(this.tableRoot, new Vec3(TABLE_CENTER.x, TABLE_CENTER.y, 0))
     // 庄家钮：素材徽章图；缺图回退白圆 + D
-    this.dealerMark = attachImage(this.node, 'dealer-badge', 40, 40)
+    this.dealerMark = attachImage(this.tableRoot, 'dealer-badge', 40, 40)
     if (!uiFrame('dealer-badge')) {
       const dg = this.dealerMark.addComponent(Graphics)
       dg.fillColor = THEME.textBright
@@ -182,28 +208,161 @@ export class OnlineGameApp extends Component {
       dg.fill()
       createLabel(this.dealerMark, 'D', 20, THEME.inkBlack, true)
     }
-    this.actionBar = new ActionBar(this.node)
-    this.messages = new MessageBar(this.node)
-    createSoundToggle(this.node, this.sfx)
-    createFullscreenToggle(this.node)
-    this.chatLog = new ChatLog(this.node, new Vec3(-478, -232, 0), (text) =>
+    this.actionBar = new ActionBar(this.tableRoot)
+    this.messages = new MessageBar(this.tableRoot)
+    // 右上角工具条：手数徽标 + 离开 / 音效 / 全屏 / 记录 / 重置（重置先弹确认，确认后发起投票）
+    this.toolbar = new Toolbar(this.tableRoot, {
+      onSound: () => {
+        const muted = this.sfx.toggleMute()
+        this.toolbar.setMuted(muted)
+        this.bgm.setMuted(muted)
+      },
+      onHistory: () => this.openHistory(),
+      onReset: () => this.net.send({ t: 'voteReset' }),
+      onLeave: () => this.net.send({ t: 'leaveRoom' }),
+    })
+    this.toolbar.setLeaveVisible(true)
+    // 浏览器自动播放策略：等玩家第一次触摸后再起背景音乐（登录弹窗点击即算手势）
+    this.bgm = new Bgm(this.node)
+    input.on(Input.EventType.TOUCH_END, () => this.bgm.userGesture())
+    this.chatLog = new ChatLog(this.tableRoot, new Vec3(-478, -232, 0), (text) =>
       this.net.send({ t: 'chat', text }),
     )
     // 主动亮牌：手牌左侧，服务器校验并广播给局内玩家（一手一次）
-    this.showBtn = createGlassButton(this.node, '亮牌', 76, 32, 14, shade(THEME.call, 1.55))
-    this.showBtn.node.setPosition(-223, -246, 0)
+    this.showBtn = createGlassButton(this.tableRoot, '亮牌', 76, 32, 14, shade(THEME.call, 1.55))
+    this.showBtn.node.setPosition(-193, -246, 0)
     this.showBtn.node.on(Node.EventType.TOUCH_END, () => {
       this.showBtn.node.active = false
       this.net.send({ t: 'showCards' })
     })
     this.showBtn.node.active = false
-    this.winFx = new WinFx(this.node)
+    this.winFx = new WinFx(this.tableRoot)
     this.buildTimerPill()
     this.buildVoteUi()
-    // 对局记录：左上角入口（8 人桌左上区域空旷，不与座位 5 横幅 / 计时胶囊相撞）
-    const histBtn = createGlassButton(this.node, '对局记录', 104, 34, 15, THEME.goldBright)
-    histBtn.node.setPosition(-540, 280)
-    histBtn.node.on(Node.EventType.TOUCH_END, () => this.openHistory())
+    // 大厅（设计稿样式：顶栏 + 左导航 + 房间表格 + 底部两钮）
+    this.lobby = new Lobby(this.lobbyRoot, {
+      onJoinRoom: (id) => this.net.send({ t: 'joinRoom', roomId: id }),
+      onCreateRoom: () => this.openCreateRoom(),
+      onRefresh: () => this.net.send({ t: 'listRooms' }),
+      onExitAccount: () => this.exitAccount(),
+      onSound: () => {
+        const muted = this.sfx.toggleMute()
+        this.toolbar.setMuted(muted)
+        this.bgm.setMuted(muted)
+        return muted
+      },
+      onFullscreen: () => {
+        void toggleFullscreen()
+      },
+    })
+    this.lobby.show()
+    this.enterLobby()
+  }
+
+  // ---------- 大厅 ⇄ 房间 切换 ----------
+
+  /** 进入房间（roomJoined）：按人数重建座位布局，清上一房残留，桌面上场 */
+  private enterRoom(msg: Extract<ServerMsg, { t: 'roomJoined' }>): void {
+    this.mode = 'room'
+    this.roomInfo = msg
+    if (msg.seats !== this.curLayout.length) {
+      this.rebuildSeats(msg.seats)
+    }
+    this.resetRoomView(true)
+    this.lobby.hide()
+    this.lobbyRoot.active = false
+    this.tableRoot.active = true
+    this.toolbar.setPhaseText(`房间 ${msg.roomId} · ${msg.name}`)
+  }
+
+  /** 回大厅（roomLeft / 退出账号）：桌面下场，重置房间视图，拉一次房间列表 */
+  private enterLobby(): void {
+    this.mode = 'lobby'
+    this.roomInfo = null
+    this.resetRoomView(false)
+    this.tableRoot.active = false
+    this.lobbyRoot.active = true
+    this.lobby.show()
+    this.lobby.setTab('rooms')
+    if (this.net.connected) {
+      this.net.send({ t: 'listRooms' })
+    }
+  }
+
+  /** 清房间内易残留状态（切房 / 回大厅 / 断线重置）；rebuild=true 连聊天记录一起重建 */
+  private resetRoomView(rebuildChat: boolean): void {
+    this.prev = null
+    this.lastActSeq = 0
+    this.barKey = ''
+    this.revealed.clear()
+    this.pendingSay.clear()
+    this.heroDealt = false
+    this.turnLeft = 0
+    this.timerView = -1
+    this.timerPill.active = false
+    if (this.votePanel?.isValid) {
+      Tween.stopAllByTarget(this.voteOpacity)
+      this.voteOpacity.opacity = 0
+      this.votePanel.active = false
+    }
+    this.actionBar.hide()
+    this.messages.hideBanner()
+    this.winFx.clear()
+    this.seats.forEach((s) => s.clearHand())
+    this.community.reset()
+    this.showBtn.node.active = false
+    if (rebuildChat) {
+      const pos = this.chatLog.node.position.clone()
+      this.chatLog.node.destroy()
+      this.chatLog = new ChatLog(this.tableRoot, pos, (text) => this.net.send({ t: 'chat', text }))
+    }
+  }
+
+  /** 人数变化（3~8）时销毁重建座位视图与布局表 */
+  private rebuildSeats(n: number): void {
+    this.seats.forEach((s) => s.node.destroy())
+    this.seats.length = 0
+    this.seatCount = n
+    this.curLayout = seatLayoutFor(n)
+    this.lastBets = new Array(n).fill(0)
+    this.curLayout.forEach((s, i) => {
+      this.seats.push(
+        new SeatView(this.tableRoot, '', {
+          pos: s.pos,
+          betOffset: s.bet,
+          colorIndex: i,
+          faceUp: s.faceUp,
+        }),
+      )
+    })
+  }
+
+  /** 建房弹窗（确认后发 createRoom，服务器创建即入房） */
+  private openCreateRoom(): void {
+    if (this.createDialog) {
+      return
+    }
+    this.createDialog = new CreateRoomDialog(this.node, (r) => {
+      this.createDialog = null
+      this.net.send({ t: 'createRoom', name: r.name, seats: r.seats, blind: r.blind as 0 | 1 | 2 | 3 })
+    })
+  }
+
+  /** 退出账号：在房先退房 → 清本地凭据 → 断开重连 → 重弹账号弹窗 */
+  private exitAccount(): void {
+    if (this.mode === 'room') {
+      this.net.send({ t: 'leaveRoom' })
+    }
+    try {
+      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(NAME_KEY)
+    } catch {
+      // 静默
+    }
+    this.net.close()
+    this.pendingAuth = { t: 'join', name: '玩家' }
+    this.enterLobby()
+    this.openAccountDialog()
   }
 
   /** 打开对局记录悬浮框并向服务器拉取最新归档 */
@@ -240,22 +399,25 @@ export class OnlineGameApp extends Component {
     this.voteAgreeBtn = createGlassButton(this.votePanel, '同意', 76, 34, 15, shade(THEME.call, 1.55))
     this.voteAgreeBtn.node.setPosition(196, 0)
     this.voteAgreeBtn.node.on(Node.EventType.TOUCH_END, () => this.net.send({ t: 'voteReset', agree: true }))
-
-    this.resetBtn = createGlassButton(this.node, '重置对局', 96, 32, 14, THEME.goldBright)
-    this.resetBtn.node.setPosition(486, 246)
-    this.resetBtn.node.on(Node.EventType.TOUCH_END, () => this.net.send({ t: 'voteReset' }))
-    this.resetBtn.node.active = false
+    // 发起投票的入口在右上角工具条的重置钮（先过确认弹窗）
   }
 
   /** 入口：本地有 token 先静默续登（自动找回座位），失败或无 token 再弹账号弹窗 */
   private askAccount(): void {
     this.net.onMessage = (msg) => this.onNet(msg)
-    this.net.onClose = () => this.messages.showPhase('与服务器断开连接，请刷新页面重试')
+    this.net.onClose = () => {
+      if (this.mode === 'lobby') {
+        // 大厅态没有常驻工具条可提示：直接回到登录弹窗重新连接
+        this.openAccountDialog('与服务器断开连接，请重新登录')
+        return
+      }
+      this.toolbar.setPhaseText('与服务器断开连接，请刷新页面重试')
+    }
     this.net.onOpen = () => this.net.auth(this.pendingAuth)
     const token = loadToken()
     if (token) {
       this.pendingAuth = { t: 'login', token }
-      this.messages.showPhase('正在登录…')
+      this.toolbar.setPhaseText('正在登录…')
       this.net.connect()
       return
     }
@@ -297,10 +459,11 @@ export class OnlineGameApp extends Component {
     if (msg.t === 'auth-ok') {
       saveToken(msg.token)
       saveName(msg.name)
-      const lost = Math.max(0, msg.played - msg.won)
-      this.messages.showPhase(`${msg.name}，生涯 胜 ${msg.won} · 负 ${lost}`)
+      this.lobby.setAccount(msg.name, msg.won, msg.played)
       this.accountDialog?.hide()
       this.accountDialog = null
+      // 留在大厅等房间列表；断线重连若有保留座，服务器 autoRejoin 的 roomJoined 紧随其后
+      this.enterLobby()
       return
     }
     if (msg.t === 'auth-err') {
@@ -317,8 +480,26 @@ export class OnlineGameApp extends Component {
       }
       return
     }
+    if (msg.t === 'rooms') {
+      if (this.mode === 'lobby') {
+        this.lobby.setRooms(msg.rooms)
+      }
+      return
+    }
+    if (msg.t === 'roomJoined') {
+      this.enterRoom(msg)
+      return
+    }
+    if (msg.t === 'roomLeft') {
+      this.enterLobby()
+      return
+    }
+    if (this.mode !== 'room') {
+      // 大厅态只处理上面的账号 / 房间列表消息，桌内消息全部忽略
+      return
+    }
     if (msg.t === 'welcome') {
-      this.messages.showPhase(msg.waiting ? '已排队，下一手入座' : msg.seat < 0 ? '观战中' : '正在入座')
+      this.toolbar.setPhaseText(msg.waiting ? '已排队，下一手入座' : msg.seat < 0 ? '观战中' : '正在入座')
       return
     }
     if (msg.t === 'state') {
@@ -354,7 +535,8 @@ export class OnlineGameApp extends Component {
   private applySnapshot(snap: Snapshot): void {
     this.seatCount = Math.max(2, snap.players.length)
     const prev = this.prev
-    if (!prev || snap.handNo !== prev.handNo) {
+    // 手数变化即新一手：清场重发（重置对局后 handNo 归 1，用 matchSeq 纪元号区分「重开的新一手」）
+    if (!prev || snap.handNo !== prev.handNo || snap.matchSeq !== prev.matchSeq) {
       this.startHandView(snap)
     } else if (snap.community.length > prev.community.length) {
       this.sweepBets(snap)
@@ -482,7 +664,7 @@ export class OnlineGameApp extends Component {
     }
     this.timerPill.active = true
     // 计时胶囊挂在行动座位横幅上缘中点（横幅几何由 SeatPlate 素材实测得出）
-    const lay = SEAT_LAYOUT_8[this.timerView]
+    const lay = this.curLayout[this.timerView]
     const top = this.seats[this.timerView].plateTopCenter()
     this.timerPill.setPosition(lay.pos.x + top.x, lay.pos.y + top.y + 16, 0)
     this.timerLabel.string = `剩 ${Math.ceil(this.turnLeft)} 秒`
@@ -492,7 +674,7 @@ export class OnlineGameApp extends Component {
   /** 投票面板：发起者与已投票者按钮收起，倒计时本地递减 */
   private updateVote(snap: Snapshot): void {
     const v = snap.vote
-    this.resetBtn.node.active = snap.you.seat >= 0 && !v
+    this.toolbar.setResetVisible(snap.you.seat >= 0 && !v)
     if (!v) {
       if (this.votePanel.active) {
         this.fadeVote(false)
@@ -567,7 +749,7 @@ export class OnlineGameApp extends Component {
     snap.players.forEach((p, seat) => {
       if (this.lastBets[seat] > 0 && p.betRound === 0) {
         const view = this.L(seat, snap.you.seat)
-        const lay = SEAT_LAYOUT_8[view]
+        const lay = this.curLayout[view]
         this.winFx.flyChips(
           new Vec3(lay.pos.x + lay.bet.x, lay.pos.y + lay.bet.y, 0),
           new Vec3(TABLE_CENTER.x, TABLE_CENTER.y + 40, 0),
@@ -578,7 +760,7 @@ export class OnlineGameApp extends Component {
   }
 
   private placeDealerMark(snap: Snapshot): void {
-    const lay = SEAT_LAYOUT_8[this.L(snap.dealerIndex, snap.you.seat)]
+    const lay = this.curLayout[this.L(snap.dealerIndex, snap.you.seat)]
     const off = lay.dealer ?? new Vec3(-70, 0, 0)
     this.dealerMark.setPosition(lay.pos.x + lay.bet.x + off.x, lay.pos.y + lay.bet.y + off.y, 0)
   }
@@ -588,7 +770,7 @@ export class OnlineGameApp extends Component {
     if (snap.you.seat < 0) {
       text = snap.you.waiting ? '已排队，等待下一手入座' : `观战 · ${text}`
     }
-    this.messages.showPhase(text)
+    this.toolbar.setPhaseText(text)
   }
 
   private updateHeroHint(snap: Snapshot): void {

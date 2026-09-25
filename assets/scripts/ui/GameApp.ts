@@ -1,4 +1,4 @@
-import { _decorator, Component, DEV, director, Graphics, Node, Vec3 } from "cc";
+import { _decorator, Component, DEV, director, Graphics, input, Input, Node, Vec3 } from "cc";
 import { AiAdvisor } from "../ai/AiAdvisor";
 import { GameEngine } from "../core/GameEngine";
 import { Player } from "../core/Player";
@@ -7,8 +7,8 @@ import { isOnlineMode } from "../net/NetClient";
 import { HandRecordJ } from "../net/Protocol";
 import { runLogicSelfTests } from "../tests/LogicSelfTest";
 import { ActionBar } from "./ActionBar";
+import { Bgm } from "./Bgm";
 import { hideBootSplash, settle, setupBootDom } from "./Boot";
-import { createFullscreenToggle } from "./FullscreenBtn";
 import { loadCardFaces } from "./CardFaces";
 import { ChatLog } from "./ChatLog";
 import { CommunityView } from "./CommunityView";
@@ -18,8 +18,9 @@ import { HistoryPanel } from "./HistoryPanel";
 import { loadIconFont } from "./IconFont";
 import { MessageBar } from "./MessageBar";
 import { OnlineGameApp } from "./OnlineGameApp";
-import { createSoundToggle, SoundFx } from "./SoundFx";
+import { SoundFx } from "./SoundFx";
 import { SeatView } from "./SeatView";
+import { Toolbar } from "./Toolbar";
 import { describeActOf, PHASE_NAMES, SEAT_LAYOUT } from "./SeatLayout";
 import { DECK_POS, TABLE_CENTER, TableView } from "./TableView";
 import { attachImage, loadUiRes, uiFrame } from "./UiRes";
@@ -39,6 +40,8 @@ export class GameApp extends Component {
   private engine = new GameEngine();
   private readonly advisor = new AiAdvisor();
   private readonly sfx = new SoundFx();
+  /** 背景音乐：不进首包，首次触摸后从部署服务器懒加载 */
+  private bgm!: Bgm;
   /** 每座位最近一次刷新的下注额（收池动画的起飞依据） */
   private lastBets: number[] = [];
   /** AI 台词：动作事件到达前暂存，随行动气泡一起展示 */
@@ -48,6 +51,8 @@ export class GameApp extends Component {
   private actionBar!: ActionBar;
   private endBar!: EndBar;
   private messages!: MessageBar;
+  /** 右上角一体化工具条：手数徽标 + 音效 / 全屏 / 记录 / 重置 */
+  private toolbar!: Toolbar;
   private chatLog!: ChatLog;
   private winFx!: WinFx;
   private dealerMark!: Node;
@@ -99,6 +104,11 @@ export class GameApp extends Component {
 
   private startMatch(): void {
     this.handRecords.length = 0;
+    // 中途重开也要清掉上一局桌面痕迹（事件流会清大部分，这里显式兜底 + 清事件覆盖不到的暂存）
+    this.winFx.clear();
+    this.pendingSay.clear();
+    this.seats.forEach((s) => s.clearHand());
+    this.community.reset();
     this.engine = new GameEngine();
     this.engine.on((ev) => this.onEngineEvent(ev));
     this.engine.addPlayer("你", false);
@@ -135,22 +145,31 @@ export class GameApp extends Component {
     this.actionBar = new ActionBar(this.node);
     this.endBar = new EndBar(this.node);
     this.messages = new MessageBar(this.node);
-    createSoundToggle(this.node, this.sfx);
-    createFullscreenToggle(this.node);
+    // 右上角工具条：手数徽标 + 音效 / 全屏 / 记录 / 重置（单机重置即重开，确认后执行）
+    this.toolbar = new Toolbar(this.node, {
+      onSound: () => {
+        const muted = this.sfx.toggleMute();
+        this.toolbar.setMuted(muted);
+        this.bgm.setMuted(muted);
+      },
+      onHistory: () => this.openHistory(),
+      onReset: () => this.startMatch(),
+      onLeave: () => undefined,
+    });
+    this.toolbar.setLeaveVisible(false);
+    // 浏览器自动播放策略：等玩家第一次触摸后再起背景音乐
+    this.bgm = new Bgm(this.node);
+    input.on(Input.EventType.TOUCH_END, () => this.bgm.userGesture());
     // 聊天面板（左下角）：单机输入仅进入本地聊天记录
     this.chatLog = new ChatLog(this.node, new Vec3(-478, -232, 0), (text) =>
       this.chatLog.push("你", text),
     );
     // 主动亮牌按钮：手牌左侧，仅局内且未亮过时出现
     this.showBtn = createGlassButton(this.node, "亮牌", 76, 32, 14, shade(THEME.call, 1.55));
-    this.showBtn.node.setPosition(-223, -246, 0);
+    this.showBtn.node.setPosition(-193, -246, 0);
     this.showBtn.node.on(Node.EventType.TOUCH_END, () => this.showMyCards());
     this.showBtn.node.active = false;
     this.winFx = new WinFx(this.node);
-    // 对局记录：左上角入口（4 人桌左上空旷，不与座位 2 / 3 的横幅和计时胶囊相撞）
-    const histBtn = createGlassButton(this.node, "对局记录", 104, 34, 15, THEME.goldBright);
-    histBtn.node.setPosition(-540, 280);
-    histBtn.node.on(Node.EventType.TOUCH_END, () => this.openHistory());
   }
 
   /** 打开对局记录悬浮框（单机：直接展示本地归档） */
@@ -221,7 +240,7 @@ export class GameApp extends Component {
 
   private showPhaseLabel(): void {
     const name = PHASE_NAMES[this.engine.phase] ?? "";
-    this.messages.showPhase(`第 ${this.engine.handNo} 手 · ${name}`);
+    this.toolbar.setPhaseText(`第 ${this.engine.handNo} 手 · ${name}`);
   }
 
   private onAct(): void {
@@ -262,12 +281,13 @@ export class GameApp extends Component {
     if (cur.isBot) {
       this.actionBar.hide();
       const botId = cur.id;
+      const eng = this.engine;
       const handNo = this.engine.handNo;
       this.seats[botId].showAction("思考中…");
       this.advisor.decide(this.engine, botId).then((d) => {
-        // 行动权已转移（重开/新局）时丢弃过期结果
+        // 行动权已转移（重开/新局）时丢弃过期结果（重置换新引擎时 handNo 可能同为 1，按实例判）
         const acting = this.engine.actingPlayer;
-        if (!acting || acting.id !== botId || this.engine.handNo !== handNo) {
+        if (this.engine !== eng || !acting || acting.id !== botId || this.engine.handNo !== handNo) {
           return;
         }
         if (d.say) {
@@ -362,10 +382,14 @@ export class GameApp extends Component {
       ),
     );
     if (this.engine.players[0].chips <= 0) {
-      // 破产：稍后弹重开窗口
+      // 破产：稍后弹重开窗口（期间若已手动重开换引擎，则不再弹）
+      const eng = this.engine;
       this.scheduleOnce(
-        () =>
-          this.messages.showRestart("筹码输光了！", () => this.startMatch()),
+        () => {
+          if (this.engine === eng) {
+            this.messages.showRestart("筹码输光了！", () => this.startMatch());
+          }
+        },
         3.4,
       );
     } else {
@@ -383,7 +407,7 @@ export class GameApp extends Component {
     this.engine.players.forEach((p) => {
       if (p.isBot && p.chips < this.engine.cfg.bigBlind) {
         p.chips = this.engine.cfg.startChips;
-        this.messages.showPhase(
+        this.toolbar.setPhaseText(
           `${p.name} 重新买入 ${this.engine.cfg.startChips} 筹码`,
         );
       }

@@ -10,6 +10,12 @@ export const ICON = {
   arrowRight: '', // 右箭头：结算明细行
   comment: '', // 气泡：聊天面板
   coins: '', // 金币堆：底池
+  volumeOn: '\uF028', // 喇叭开：工具条音效
+  volumeOff: '\uF6A9', // 喇叭静音（带斜杠）
+  expand: '\uF065', // 进入全屏：四角外扩
+  compress: '\uF066', // 退出全屏：四角内收
+  history: '\uF57A', // 对局记录：时钟回拨
+  reset: '\uF0E2', // 重置对局：左旋回环
 }
 
 let cached: Font | null = null
@@ -76,4 +82,21 @@ export function createIcon(parent: Node, char: string, size: number, color?: Col
     waiting.push({ label, char })
   }
   return label
+}
+
+/**
+ * 更新已创建图标的字形与颜色（音效 / 全屏等状态换面用）。
+ * 字体未就绪时同步改写待补队列，避免字体到位后被旧字形覆盖。
+ */
+export function setIconChar(label: Label, char: string, color?: Color): void {
+  const queued = waiting.find((w) => w.label === label)
+  if (queued) {
+    queued.char = char
+  }
+  if (cached && isValid(label)) {
+    applyFont(label, char)
+  }
+  if (color && isValid(label)) {
+    label.color = color
+  }
 }

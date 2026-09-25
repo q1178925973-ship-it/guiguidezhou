@@ -79,6 +79,8 @@ export interface VoteSnap {
 /** 全量视图快照：客户端只依据它渲染 */
 export interface Snapshot {
   handNo: number
+  /** 对局纪元号：服务器每次 resetMatch 重建引擎时 +1（handNo 会归 1，客户端据此识别「重开后的新一手」） */
+  matchSeq: number
   phase: 'idle' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'over'
   dealerIndex: number
   /** 当前行动座位，-1 表示无人行动 */
@@ -101,9 +103,26 @@ export interface Snapshot {
   }
 }
 
+/** 大厅房间列表项 */
+export interface RoomInfo {
+  /** 6 位数字房间号 */
+  id: string
+  name: string
+  /** 桌子总座位（3~8） */
+  seats: number
+  /** 在座真人数 */
+  humans: number
+  smallBlind: number
+  bigBlind: number
+  /** 牌局进行中（等待开局 / 两手之间 = false） */
+  inHand: boolean
+  /** 我有座位或保留座的房间（服务器逐连接单播时附带） */
+  mine?: boolean
+}
+
 /** 客户端发给服务器的消息 */
 export type ClientMsg =
-  /** 连接后的首条消息三选一：游客进桌 */
+  /** 连接后的首条消息三选一：游客进大厅 */
   | { t: 'join'; name: string }
   /** 注册新账号（用户名支持中文）并登录 */
   | { t: 'register'; name: string; pass: string }
@@ -117,6 +136,15 @@ export type ClientMsg =
   | { t: 'showCards' }
   /** 拉取当前对局的历史记录（最新在前，观战者也可看） */
   | { t: 'getHistory' }
+  // ---- 多房间：登录后先进大厅，以下命令在任意态可发 ----
+  /** 拉取公开房间列表（服务器也会在房间增减 / 人数变化时防抖推送） */
+  | { t: 'listRooms' }
+  /** 创建并立即加入新房：seats=桌子总人数 3~8；blind=底注档位索引 0~3 */
+  | { t: 'createRoom'; name: string; seats: number; blind: 0 | 1 | 2 | 3 }
+  /** 加入指定房间（满员自动观战；在别的房则先退房） */
+  | { t: 'joinRoom'; roomId: string }
+  /** 主动退出当前房间回大厅（座位立即释放，不留保留座） */
+  | { t: 'leaveRoom' }
 
 /** 服务器发给客户端的消息 */
 export type ServerMsg =
@@ -130,3 +158,10 @@ export type ServerMsg =
   | { t: 'err'; msg: string }
   /** 对 getHistory 的应答：当前对局已归档的历史手牌（最新在前） */
   | { t: 'history'; hands: HandRecordJ[] }
+  // ---- 多房间 ----
+  /** 公开房间列表（防抖推送，仅发大厅态连接；mine 逐连接计算） */
+  | { t: 'rooms'; rooms: RoomInfo[] }
+  /** 进房成功（建房 / joinRoom / 断线重连自动回归都会发） */
+  | { t: 'roomJoined'; roomId: string; name: string; seats: number; smallBlind: number; bigBlind: number }
+  /** 退房成功，已回大厅 */
+  | { t: 'roomLeft' }

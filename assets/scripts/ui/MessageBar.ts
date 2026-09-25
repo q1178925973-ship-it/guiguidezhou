@@ -1,11 +1,10 @@
 import { Graphics, Label, Node, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc'
 import { createIcon, ICON } from './IconFont'
-import { createButton, createLabel, createNode, drawRoundRect, THEME, withOutline } from './Theme'
+import { createButton, createLabel, createNode, drawRoundRect, THEME } from './Theme'
 
-/** 顶部阶段提示 + 中央结算横幅 + 破产重开弹窗 */
+/** 中央结算横幅 + 破产重开弹窗（顶部阶段提示已并入右上角工具条徽标） */
 export class MessageBar {
   readonly node: Node
-  private readonly phaseLabel: Label
   private readonly bannerNode: Node
   private readonly bannerG: Graphics
   private readonly bannerTitle: Label
@@ -16,10 +15,6 @@ export class MessageBar {
 
   constructor(parent: Node) {
     this.node = createNode('messages', parent)
-    // 顶部阶段提示：亮字 + 深色描边，右对齐放屏幕右上角（避开上方座位）
-    this.phaseLabel = withOutline(createLabel(this.node, '', 24, THEME.textBright, true))
-    this.phaseLabel.node.getComponent(UITransform)!.setAnchorPoint(1, 0.5)
-    this.phaseLabel.node.setPosition(596, 322)
     // 中央结算横幅：奖杯图标 + 左对齐金色标题 + 箭头引导的明细行
     this.bannerNode = createNode('banner', this.node)
     this.bannerNode.setPosition(0, 150)
@@ -30,10 +25,6 @@ export class MessageBar {
     this.linesHost = createNode('lines', this.bannerNode)
     this.bannerOpacity = this.bannerNode.addComponent(UIOpacity)
     this.bannerOpacity.opacity = 0
-  }
-
-  showPhase(text: string): void {
-    this.phaseLabel.string = text
   }
 
   /** 显示结算结果：奖杯 + 金色标题（谁赢了多少）+ 每行箭头图标引导的明细，缩放淡入 */

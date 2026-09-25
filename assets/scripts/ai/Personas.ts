@@ -121,6 +121,17 @@ export const PERSONAS: Record<string, Persona> = {
   },
 }
 
+/** 真人牌手嘴风铁律（全员共用）：台词是武器不是自白 —— 弱牌装强偷鸡、强牌示弱钓鱼 */
+const MOUTH_RULES =
+  '说话铁律：像真人玩家一样尔虞我诈，绝不透露自己的真实牌力——' +
+  '弱牌可以虚张声势（偷鸡），强牌可以示弱设套（钓鱼），可以谎报自己拿了什么牌，' +
+  '也可以挑衅、嘲讽、装傻、转移话题；台词要和真实牌力相反或无关。'
+
+// 统一注入嘴风铁律：人设只管性格，说话规则全员一致
+for (const p of Object.values(PERSONAS)) {
+  p.system += MOUTH_RULES
+}
+
 /** 单机版按机器人座位号取人设（1=阿宝 2=老K 3=胖虎） */
 export function personaOf(botId: number): Persona {
   const names = ['阿宝', '老K', '胖虎']

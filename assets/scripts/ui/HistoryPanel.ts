@@ -5,18 +5,19 @@ import { frameOfCard } from "./CardFaces";
 import { createGlassButton, createLabel, createNode, drawGlassPanel, THEME } from "./Theme";
 
 /** 悬浮框尺寸（Fit Height 720 设计坐标）；一页 1 手整块展示，牌统一做大保证手机可读 */
-const PANEL_W = 660;
-const PANEL_H = 500;
+const PANEL_W = 760;
+const PANEL_H = 560;
 const PAGE_SIZE = 1;
-const BLOCK_H = 320;
+const BLOCK_H = 430;
 const BLOCK_W = PANEL_W - 48;
 /** 牌尺寸与间距（公共牌 / 赢家底牌 / 其余玩家底牌统一） */
 const CARD_W = 50;
 const CARD_H = 70;
 const CARD_PITCH = 55;
-/** 赢家组 / 其余玩家组最多并排展示数（超出末位显示「等」计数） */
-const MAX_WINNER_GROUPS = 2;
-const MAX_OTHER_GROUPS = 4;
+/** 赢家组并排上限（三人平分以内；更多极其罕见，末位显示「等」计数） */
+const MAX_WINNER_GROUPS = 3;
+/** 其余玩家每行组数：两行 8 槽，满员 8 人桌也全员亮牌，不再出现「等 N 人」 */
+const OTHERS_PER_ROW = 4;
 
 /** 一张小牌：优先雪碧图，缺图回退白底圆角 + 点数花色文字 */
 function miniCard(parent: Node, c: CardJ, x: number, y: number, w: number, h: number): void {
@@ -74,20 +75,20 @@ export class HistoryPanel {
     panel.on(Node.EventType.TOUCH_END, (ev: EventTouch) => { ev.propagationStopped = true; });
 
     const title = createLabel(panel, "对局记录", 24, THEME.goldBright, true);
-    title.node.setPosition(0, 230);
+    title.node.setPosition(0, 252);
     const closeBtn = createGlassButton(panel, "关闭", 76, 32, 15);
-    closeBtn.node.setPosition(262, 230);
+    closeBtn.node.setPosition(322, 252);
     closeBtn.node.on(Node.EventType.TOUCH_END, () => this.close());
 
     this.listHost = createNode("list", panel, BLOCK_W, BLOCK_H * PAGE_SIZE);
-    this.listHost.setPosition(0, 20);
+    this.listHost.setPosition(0, 16);
     const prev = createGlassButton(panel, "上一页", 84, 32, 14);
-    prev.node.setPosition(-120, -224);
+    prev.node.setPosition(-120, -246);
     prev.node.on(Node.EventType.TOUCH_END, () => this.turn(-1));
     this.pageLabel = createLabel(panel, "", 13, THEME.textDim);
-    this.pageLabel.node.setPosition(0, -224);
+    this.pageLabel.node.setPosition(0, -246);
     const next = createGlassButton(panel, "下一页", 84, 32, 14);
-    next.node.setPosition(120, -224);
+    next.node.setPosition(120, -246);
     next.node.on(Node.EventType.TOUCH_END, () => this.turn(1));
 
     panel.setScale(0.82, 0.82, 1);
@@ -160,37 +161,42 @@ export class HistoryPanel {
       label.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
       label.node.setPosition(x, y);
     };
-    leftLabel(`第 ${h.handNo} 手 · ${h.title}`, 17, THEME.goldBright, true, left, 130);
+    leftLabel(`第 ${h.handNo} 手 · ${h.title}`, 17, THEME.goldBright, true, left, 192);
     const detailRaw = h.lines.join("；");
-    leftLabel(detailRaw.length > 44 ? `${detailRaw.slice(0, 44)}…` : detailRaw, 12, THEME.textDim, false, left, 112);
+    leftLabel(detailRaw.length > 52 ? `${detailRaw.slice(0, 52)}…` : detailRaw, 12, THEME.textDim, false, left, 174);
 
     // 主牌行：左公共牌 + 竖分隔线 + 右赢家底牌（名字在各自牌正上方）
-    createLabel(block, "公共牌", 11, THEME.textDim).node.setPosition(-155, 88);
-    const mainY = 45;
-    h.community.forEach((c, i) => miniCard(block, c, -265 + i * CARD_PITCH, mainY, CARD_W, CARD_H));
+    createLabel(block, "公共牌", 11, THEME.textDim).node.setPosition(-220, 150);
+    const mainY = 108;
+    h.community.forEach((c, i) => miniCard(block, c, -330 + i * CARD_PITCH, mainY, CARD_W, CARD_H));
     g.strokeColor = new Color(255, 255, 255, 55);
-    g.moveTo(-8, 6);
-    g.lineTo(-8, 84);
+    g.moveTo(-62, 70);
+    g.lineTo(-62, 146);
     g.stroke();
 
-    const groups = [{ xs: 33, nameX: 61 }, { xs: 163, nameX: 191 }];
+    const groups = [{ xs: -2.5, nameX: 25 }, { xs: 132.5, nameX: 160 }, { xs: 267.5, nameX: 295 }];
     h.winners.slice(0, MAX_WINNER_GROUPS).forEach((w, i) => {
-      createLabel(block, clipName(w.name), 11, THEME.goldBright, true).node.setPosition(groups[i].nameX, 88);
+      createLabel(block, clipName(w.name), 11, THEME.goldBright, true).node.setPosition(groups[i].nameX, 150);
       w.hole.forEach((c, j) => miniCard(block, c, groups[i].xs + j * CARD_PITCH, mainY, CARD_W, CARD_H));
     });
     if (h.winners.length > MAX_WINNER_GROUPS) {
-      createLabel(block, "等", 12, THEME.textDim).node.setPosition(248, mainY);
+      createLabel(block, `等 ${h.winners.length - MAX_WINNER_GROUPS} 人`, 11, THEME.goldBright, true).node.setPosition(335, 150);
     }
 
-    // 其余玩家行：名字在牌正上方，牌与主牌行同尺寸（复盘弃牌者 / 摊牌输家）
-    createLabel(block, "其余玩家", 11, THEME.textDim).node.setPosition(0, -14);
-    h.others.slice(0, MAX_OTHER_GROUPS).forEach((w, i) => {
-      const x = -300 + i * 145;
-      createLabel(block, clipName(w.name), 11, THEME.textDim).node.setPosition(x + 53, -42);
-      w.hole.forEach((c, j) => miniCard(block, c, x + 26 + j * CARD_PITCH, -90, CARD_W, CARD_H));
-    });
-    if (h.others.length > MAX_OTHER_GROUPS) {
-      createLabel(block, `等 ${h.others.length} 人`, 11, THEME.textDim).node.setPosition(282, -42);
+    // 其余玩家：两行最多 8 组 —— 满员桌也全员亮牌复盘（弃牌者 / 摊牌输家），不再截断
+    const others = h.others.slice(0, OTHERS_PER_ROW * 2);
+    if (others.length > 0) {
+      createLabel(block, "其余玩家", 11, THEME.textDim).node.setPosition(0, 44);
     }
+    others.forEach((w, i) => {
+      const row = Math.floor(i / OTHERS_PER_ROW);
+      const col = i % OTHERS_PER_ROW;
+      const rowCount = Math.min(OTHERS_PER_ROW, others.length - row * OTHERS_PER_ROW);
+      const center = (col - (rowCount - 1) / 2) * 145;
+      const nameY = row === 0 ? 20 : -84;
+      const cardY = row === 0 ? -28 : -132;
+      createLabel(block, clipName(w.name), 11, THEME.textDim).node.setPosition(center, nameY);
+      w.hole.forEach((c, j) => miniCard(block, c, center - 27.5 + j * CARD_PITCH, cardY, CARD_W, CARD_H));
+    });
   }
 }

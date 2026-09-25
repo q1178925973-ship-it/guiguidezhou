@@ -27,7 +27,15 @@ const BOOT_CSS = [
   'resize:none!important;',
   '-webkit-appearance:none!important;',
   'appearance:none!important;',
+  // 引擎聚焦时挂载的原生输入框会被浏览器画上默认滚动条（白底轨道 + 上下箭头），
+  // 多行框引擎还内联了 overflowY:scroll：overflow:hidden!important 优先级高于内联样式可一并压掉，
+  // scrollbar-width 兜底 Firefox，-ms-overflow-style 兜底旧 Edge
+  'overflow:hidden!important;',
+  'scrollbar-width:none!important;',
+  '-ms-overflow-style:none!important;',
   '}',
+  'input::-webkit-scrollbar,textarea::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}',
+  'input::-webkit-inner-spin-button,input::-webkit-outer-spin-button{-webkit-appearance:none!important;margin:0!important}',
   'input::placeholder,textarea::placeholder{color:transparent!important}',
   'input::selection,textarea::selection{background:rgba(245,196,105,.35)!important}',
   '@media (pointer:coarse){input,textarea{font-size:16px!important}}',

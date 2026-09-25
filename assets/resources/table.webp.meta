@@ -2,16 +2,16 @@
  "ver": "1.0.26",
  "importer": "image",
  "imported": true,
- "uuid": "a0f0dab2-21f4-4643-82ab-38119a8d98ff",
+ "uuid": "b657dac9-901b-47be-935e-e7cde7140d24",
  "files": [
   ".json",
-  ".png"
+  ".webp"
  ],
  "subMetas": {
   "6c48a": {
    "importer": "texture",
-   "uuid": "a0f0dab2-21f4-4643-82ab-38119a8d98ff@6c48a",
-   "displayName": "dealer-badge",
+   "uuid": "b657dac9-901b-47be-935e-e7cde7140d24@6c48a",
+   "displayName": "table",
    "id": "6c48a",
    "name": "texture",
    "userData": {
@@ -22,7 +22,7 @@
     "mipfilter": "none",
     "anisotropy": 0,
     "isUuid": true,
-    "imageUuidOrDatabaseUri": "a0f0dab2-21f4-4643-82ab-38119a8d98ff",
+    "imageUuidOrDatabaseUri": "b657dac9-901b-47be-935e-e7cde7140d24",
     "visible": false
    },
    "ver": "1.0.22",
@@ -35,8 +35,8 @@
  },
  "userData": {
   "fixAlphaTransparencyArtifacts": false,
-  "hasAlpha": true,
+  "hasAlpha": false,
   "type": "texture",
-  "redirect": "a0f0dab2-21f4-4643-82ab-38119a8d98ff@6c48a"
+  "redirect": "b657dac9-901b-47be-935e-e7cde7140d24@6c48a"
  }
 }

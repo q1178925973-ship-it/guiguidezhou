@@ -8,9 +8,15 @@ import { Act, ActKind, GameEvent, LegalActs, Phase } from '../assets/scripts/cor
 import { CardJ, ClientMsg, HandRecordJ, PlayerSnap, ServerMsg, Snapshot, VoteSnap } from '../assets/scripts/net/Protocol'
 import { AccountStore } from './AccountStore'
 
-/** 每个座位默认的 AI 名字（座位 0~7） */
+/** 每个座位默认的 AI 名字（座位 0~7，按桌大小截取前 N 个） */
 export const BOT_NAMES = ['小美', '阿宝', '老K', '胖虎', '大乔', '石头', '莉莉', '教授']
-const SEAT_COUNT = 8
+/** 牌桌参数：房间创建时由 RoomManager 传入（缺省 = 原单桌行为：8 座 10/20） */
+export interface TableOpts {
+  /** 桌子总座位，钳到 3~8 */
+  seatCount?: number
+  smallBlind?: number
+  bigBlind?: number
+}
 /** 历史记录归档上限（够整晚复盘，防止长局内存无限增长） */
 const HISTORY_MAX = 50
 /** 局末到下一手的间隔（毫秒）；自检用环境变量调快节奏 */
@@ -26,8 +32,8 @@ const TURN_TIMEOUT = 60000
 const VOTE_TIMEOUT = 30000
 /** 投票失败后的冷却，防连续发起刷屏 */
 const VOTE_COOLDOWN = 8000
-/** 掉线座位的账号保留时长：期间重登找回原座位与筹码，过期释放给新玩家 */
-const SEAT_RESERVE_MS = 10 * 60 * 1000
+/** 掉线座位的账号保留时长：期间重登找回原座位与筹码，过期释放给新玩家（自检可调短） */
+const SEAT_RESERVE_MS = Number(process.env.TEXAS_SEAT_RESERVE_MS ?? 600000)
 
 interface Client {
   ws: WebSocket
@@ -57,23 +63,29 @@ const PHASE_KEY: Record<Phase, Snapshot['phase']> = {
 }
 
 /**
- * 权威牌桌：一台服务器一张桌。
- * 真人按加入顺序占 8 个座位，空位与掉线座位由 AI 代打；
+ * 权威牌桌：一个房间一张桌（座位数 / 盲注由构造参数决定）。
+ * 真人按加入顺序占座位，空位与掉线座位由 AI 代打；
  * 满员后新连接进观战；等待中的真人在下一手开始时入座。
  * 服务端 AI 走 DeepSeek（DEEPSEEK_API_KEY 环境变量注入），失败自动降级本地决策。
  */
 export class Table {
-  private engine = new GameEngine()
   private readonly advisor = new AiAdvisor({ timeoutMs: 7000, retries: 0 })
   private readonly clients: Client[] = []
-  private readonly seatClient: Array<Client | null> = new Array(SEAT_COUNT).fill(null)
+  /** 桌子座位数（3~8，构造时定死） */
+  private readonly seatCount: number
+  /** 本桌机器人名（按座位数截取前 N 个） */
+  private readonly botNames: string[]
+  /** 本桌盲注（resetMatch 重建引擎时复用；只存已定义键，避免 undefined 覆盖引擎默认值） */
+  private readonly engineCfg: { smallBlind?: number; bigBlind?: number }
+  private engine!: GameEngine
+  private readonly seatClient: Array<Client | null> = []
   /** 账号绑定的座位（掉线后保留供重登找回）：座位 → 用户名 */
-  private readonly seatAccount: Array<string | null> = new Array(SEAT_COUNT).fill(null)
+  private readonly seatAccount: Array<string | null> = []
   /** 账号座位保留截止时间（毫秒时间戳，0 = 无保留） */
-  private readonly reserveUntil = new Array<number>(SEAT_COUNT).fill(0)
+  private readonly reserveUntil: number[] = []
   /** 账号座位的生涯胜负（快照下发口径；游客 / 机器人用引擎当次统计） */
-  private readonly accWon = new Array<number | null>(SEAT_COUNT).fill(null)
-  private readonly accPlayed = new Array<number | null>(SEAT_COUNT).fill(null)
+  private readonly accWon: Array<number | null> = []
+  private readonly accPlayed: Array<number | null> = []
   private readonly waiting: Client[] = []
   /** 局末摊牌 / 中途弃牌亮出的底牌（座位 → 牌） */
   private readonly reveal = new Map<number, Card[]>()
@@ -94,10 +106,87 @@ export class Table {
   private handOver = true
   /** 动作流水号：客户端据此识别「新动作」避免重复播气泡 */
   private actSeq = 0
+  /** 对局纪元号：resetMatch 重建引擎时 +1，随快照下发（handNo 会归 1，用它区分重开的新一手） */
+  private matchSeq = 0
 
-  constructor(private readonly store: AccountStore) {
-    BOT_NAMES.forEach((name) => this.engine.addPlayer(name, true))
+  constructor(
+    private readonly store: AccountStore,
+    opts: TableOpts = {},
+    /** 房间信息变化回调（RoomManager 注入，只标脏不直接推，避免循环依赖） */
+    private readonly onDirty: () => void = () => undefined,
+  ) {
+    // 座位相关数组必须在构造体里建：TS 字段初始化器先于构造体执行，
+    // 引用不到 this.seatCount 会静默产出稀疏数组（new Array(undefined)），症状极隐晦
+    const rawSeats = Number(opts.seatCount)
+    this.seatCount = Math.max(3, Math.min(8, Number.isFinite(rawSeats) ? Math.floor(rawSeats) : 8))
+    this.botNames = BOT_NAMES.slice(0, this.seatCount)
+    const cfg: { smallBlind?: number; bigBlind?: number } = {}
+    if (Number.isFinite(opts.smallBlind)) {
+      cfg.smallBlind = opts.smallBlind
+    }
+    if (Number.isFinite(opts.bigBlind)) {
+      cfg.bigBlind = opts.bigBlind
+    }
+    this.engineCfg = cfg
+    for (let i = 0; i < this.seatCount; i++) {
+      this.seatClient.push(null)
+      this.seatAccount.push(null)
+      this.reserveUntil.push(0)
+      this.accWon.push(null)
+      this.accPlayed.push(null)
+    }
+    this.engine = new GameEngine(this.engineCfg)
+    this.botNames.forEach((name) => this.engine.addPlayer(name, true))
     this.engine.on((ev) => this.onEngineEvent(ev))
+  }
+
+  // ---------- 房间信息（RoomManager 组 RoomInfo / GC 用） ----------
+
+  /** 桌子座位总数 */
+  get seats(): number {
+    return this.seatCount
+  }
+
+  get smallBlind(): number {
+    return this.engine.cfg.smallBlind
+  }
+
+  get bigBlind(): number {
+    return this.engine.cfg.bigBlind
+  }
+
+  /** 在座真人数 */
+  get humans(): number {
+    return this.seatClient.reduce((n, c) => n + (c ? 1 : 0), 0)
+  }
+
+  /** 牌局进行中（未开局 / 两手之间 = false） */
+  get inHand(): boolean {
+    return this.started && !this.handOver
+  }
+
+  /** 在线客户端数（含观战；房间 GC 判空用） */
+  get clientCount(): number {
+    return this.clients.length
+  }
+
+  /** 账号当前在本桌的座位：在线优先，其次保留期内（-1 = 无） */
+  seatOfAccount(account: string | null): number {
+    if (!account) {
+      return -1
+    }
+    const live = this.clients.find((c) => c.account === account)
+    if (live && live.seat >= 0) {
+      return live.seat
+    }
+    const seat = this.seatAccount.findIndex((a) => a === account)
+    return seat >= 0 && Date.now() < this.reserveUntil[seat] ? seat : -1
+  }
+
+  /** 是否还有未过期的账号保留座（房间 GC 用：有保留座的空房不回收） */
+  hasReservations(): boolean {
+    const now = Date.now()
+    return this.seatAccount.some((a, i) => !!a && now < this.reserveUntil[i])
   }
 
   /** 新连接：注册 / 登录 / 游客取名后进桌；账号玩家先尝试找回座位 */
@@ -122,6 +211,7 @@ export class Table {
     } else {
       this.broadcastState()
     }
+    this.onDirty()
   }
 
   /** 客户端消息（join 之外的都走这里） */
@@ -191,24 +281,56 @@ export class Table {
     return true
   }
 
-  /** 连接断开：座位转 AI 托管（正轮到时立即代打，防卡局） */
+  /** 连接断开：座位按断线口径保留（账号保留 10 分钟供重登找回，AI 托管代打） */
   leave(ws: WebSocket): void {
-    const idx = this.clients.findIndex((c) => c.ws === ws)
+    const client = this.clients.find((c) => c.ws === ws)
+    if (client) {
+      this.removeClient(client, true)
+    }
+  }
+
+  /** 主动退房：座位立即释放（不留保留座），行动权转 AI */
+  depart(ws: WebSocket): void {
+    const client = this.clients.find((c) => c.ws === ws)
+    if (client) {
+      this.removeClient(client, false)
+    }
+  }
+
+  /**
+   * 跨房顶号：把该账号在本桌的在线连接踢下线（座位按断线口径保留），
+   * 供 RoomManager 在该账号加入其他房间前调用。
+   */
+  evictAccount(account: string): boolean {
+    const client = this.clients.find((c) => c.account === account)
+    if (!client) {
+      return false
+    }
+    this.removeClient(client, true)
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.close(4000, 'account-replaced')
+    }
+    return true
+  }
+
+  /** 摘除一个客户端：keepReserve=true 断线口径（账号座位保留期），false 主动退房（立即释放） */
+  private removeClient(client: Client, keepReserve: boolean): void {
+    const idx = this.clients.indexOf(client)
     if (idx < 0) {
       return
     }
-    const client = this.clients[idx]
     this.clients.splice(idx, 1)
     if (client.seat >= 0) {
       this.seatClient[client.seat] = null
-      if (client.account) {
+      if (keepReserve && client.account) {
         // 账号座位保留一段时间：重登可带着原筹码找回
         this.seatAccount[client.seat] = client.account
         this.reserveUntil[client.seat] = Date.now() + SEAT_RESERVE_MS
-        this.say('系统', `${client.name} 离开，座位保留 ${SEAT_RESERVE_MS / 60000} 分钟，AI 暂时托管`)
+        this.say('系统', `${client.name} 离开，座位保留 ${reserveLabel()}，AI 暂时托管`)
       } else {
         this.seatAccount[client.seat] = null
-        this.say('系统', `${client.name} 离开，座位由 AI 托管`)
+        this.reserveUntil[client.seat] = 0
+        this.say('系统', `${client.name} 离开了座位，AI 接管`)
       }
       const acting = this.engine.actingPlayer
       if (acting && acting.id === client.seat) {
@@ -228,6 +350,7 @@ export class Table {
       }
     }
     this.broadcastState()
+    this.onDirty()
   }
 
   /** 空闲时收尾（测试用） */
@@ -316,8 +439,9 @@ export class Table {
     this.revealAll = false
     this.handLog.length = 0
     this.handOver = true
-    this.engine = new GameEngine()
-    BOT_NAMES.forEach((name) => this.engine.addPlayer(name, true))
+    this.matchSeq++
+    this.engine = new GameEngine(this.engineCfg)
+    this.botNames.forEach((name) => this.engine.addPlayer(name, true))
     this.engine.on((ev) => this.onEngineEvent(ev))
     this.say('系统', '对局已重置：全员回到 1000 筹码（账号玩家仍累计生涯胜负）')
     while (this.waiting.length > 0) {
@@ -333,6 +457,7 @@ export class Table {
     } else {
       this.broadcastState()
     }
+    this.onDirty()
   }
 
   // ---------- 内部：座位与手牌流转 ----------
@@ -385,11 +510,13 @@ export class Table {
     this.handOver = false
     this.engine.startHand()
     this.broadcastState()
+    this.onDirty()
   }
 
   private onEngineEvent(ev: GameEvent): void {
     if (ev === 'hand-end') {
       this.handOver = true
+      this.onDirty()
       this.clearTurnTimer()
       this.settleAccountStats()
       const showdown = this.engine.lastAwards.some((a) => a.reason === 'showdown')
@@ -454,10 +581,15 @@ export class Table {
   /** 真人行动计时：60 秒不操作自动过牌/跟注 */
   private armTurnTimer(seat: number): void {
     this.clearTurnTimer()
-    const handNo = this.engine.handNo
+    const eng = this.engine
+    const handNo = eng.handNo
     this.turnDeadline = Date.now() + TURN_TIMEOUT
     this.turnTimer = setTimeout(() => {
       this.turnTimer = null
+      // 重置会整个换新引擎（handNo 可能同为 1）：按引擎实例判过期
+      if (this.engine !== eng) {
+        return
+      }
       const cur = this.engine.actingPlayer
       if (!cur || cur.id !== seat || this.engine.handNo !== handNo) {
         return
@@ -480,21 +612,29 @@ export class Table {
       return
     }
     const seat = acting.id
+    const eng = this.engine
     this.botTimer = setTimeout(() => {
       this.botTimer = null
+      // 重置会整个换新引擎（handNo 可能同为 1）：按引擎实例判过期
+      if (this.engine !== eng) {
+        return
+      }
       const cur = this.engine.actingPlayer
       if (!cur || cur.id !== seat || this.seatClient[seat]) {
         return
       }
       const handNo = this.engine.handNo
-      const persona = personaByName(BOT_NAMES[seat])
+      const persona = personaByName(this.botNames[seat])
       this.advisor.decide(this.engine, seat, persona).then((d) => {
         // 响应回来时行动权可能已转移（真人重连接管 / 换手 / 重置），过期即丢弃
+        if (this.engine !== eng) {
+          return
+        }
         const now = this.engine.actingPlayer
         if (!now || now.id !== seat || this.engine.handNo !== handNo || this.seatClient[seat]) {
           return
         }
-        this.say(BOT_NAMES[seat], d.say, seat, 'ai')
+        this.say(this.botNames[seat], d.say, seat, 'ai')
         this.engine.act(seat, d.act)
         this.actSeq++
       })
@@ -551,7 +691,7 @@ export class Table {
   private seatName(seat: number): string {
     // 真人不在线（断线托管中，含账号座位保留期）：一律显示机器人名，
     // 避免聊天发言是机器人名字、玩家卡片却还是玩家名字的出戏
-    return this.seatClient[seat]?.name ?? BOT_NAMES[seat]
+    return this.seatClient[seat]?.name ?? this.botNames[seat]
   }
 
   /** 系统消息 seat 传 -1；tag 区分 AI 台词 / 真人聊天 / 系统提示（客户端展示方式不同） */
@@ -619,6 +759,7 @@ export class Table {
       : undefined
     return {
       handNo: e.handNo,
+      matchSeq: this.matchSeq,
       phase: PHASE_KEY[e.phase],
       dealerIndex: e.dealerIndex,
       actingIndex: e.actingIndex,
@@ -720,6 +861,13 @@ export class Table {
 
 function toCardJ(c: Card): CardJ {
   return { r: c.rank, s: c.suit }
+}
+
+/** 保留座时长的播报文案（自检把保留期调到秒级时不显示「0 分钟」） */
+function reserveLabel(): string {
+  return SEAT_RESERVE_MS >= 60000
+    ? `${Math.round(SEAT_RESERVE_MS / 60000)} 分钟`
+    : `${Math.max(1, Math.round(SEAT_RESERVE_MS / 1000))} 秒`
 }
 
 /** 名字清洗：去空白、限长，空名给默认 */
