@@ -337,15 +337,22 @@ export class OnlineGameApp extends Component {
     })
   }
 
-  /** 建房弹窗（确认后发 createRoom，服务器创建即入房） */
+  /** 建房弹窗（确认后发 createRoom，服务器创建即入房）。
+   *  关闭回调统一清 createDialog 引用——旧版只在确认分支清，
+   *  取消/点遮罩后引用悬死，再点「创建房间」被 if 挡住没反应 */
   private openCreateRoom(): void {
     if (this.createDialog) {
       return
     }
-    this.createDialog = new CreateRoomDialog(this.node, (r) => {
-      this.createDialog = null
-      this.net.send({ t: 'createRoom', name: r.name, seats: r.seats, blind: r.blind as 0 | 1 | 2 | 3 })
-    })
+    this.createDialog = new CreateRoomDialog(
+      this.node,
+      (r) => {
+        this.net.send({ t: 'createRoom', name: r.name, seats: r.seats, blind: r.blind as 0 | 1 | 2 | 3 })
+      },
+      () => {
+        this.createDialog = null
+      },
+    )
   }
 
   /** 退出账号：在房先退房 → 清本地凭据 → 断开重连 → 重弹账号弹窗 */

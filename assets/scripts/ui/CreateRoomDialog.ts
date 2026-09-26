@@ -20,6 +20,8 @@ const BLIND_TIERS = [
 /**
  * 创建房间弹窗：房名输入（限 12 字）+ 人数步进（3~8，机器人数 = 总人数 − 真家）
  * + 底注档位四选一。点「创建房间」回调 onConfirm 后自关。
+ * 无论确认 / 取消 / 点遮罩关闭，都会先回调 onClose（持有方靠它清引用，
+ * 否则取消后再也打不开第二次）。
  * 视觉与 AccountDialog 同族（磨砂玻璃面板 + 玻璃输入框）。
  */
 export class CreateRoomDialog {
@@ -27,10 +29,12 @@ export class CreateRoomDialog {
   private readonly panel: Node
   private readonly nameBox: EditBox
   private readonly seatLabel: Label
+  private readonly onClose: () => void
   private seats = 6
   private tier = 0
 
-  constructor(parent: Node, onConfirm: (r: CreateRoomResult) => void) {
+  constructor(parent: Node, onConfirm: (r: CreateRoomResult) => void, onClose: () => void = () => undefined) {
+    this.onClose = onClose
     this.node = createNode('createRoomDialog', parent)
     const mask = createNode('mask', this.node, 1280, 720)
     const mg = mask.addComponent(Graphics)
@@ -146,6 +150,7 @@ export class CreateRoomDialog {
 
   hide(): void {
     Tween.stopAllByTarget(this.panel)
+    this.onClose()
     this.node.destroy()
   }
 }

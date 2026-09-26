@@ -11,8 +11,6 @@ import {
   shade,
   THEME,
 } from './Theme'
-import { attachImage, uiFrame } from './UiRes'
-
 export type LobbyTab = 'rooms' | 'mine' | 'record'
 
 export interface LobbyHandlers {
@@ -30,18 +28,19 @@ export interface LobbyHandlers {
   onFullscreen: () => void
 }
 
-/** 表格六列的列心横坐标（面板局部坐标，面板宽 722） */
+/** 表格六列的列心横坐标（行宽 690；roomRow 素材左端 dx40..79 烧死锁形、
+ *  右端 dx640..760 烧死空白金钮——列位避开锁、操作列正对烧死金钮中心） */
 const COLS = {
-  id: -300,
-  name: -180,
-  blind: -52,
-  humans: 66,
-  state: 152,
-  act: 282,
+  id: -235,
+  name: -105,
+  blind: 18,
+  humans: 135,
+  state: 215,
+  act: 269,
 }
-const ROW_TOP = 74
-const ROW_STEP = 56
-const ROW_COUNT = 8
+const ROW_TOP = 124
+const ROW_STEP = 54
+const ROW_COUNT = 7
 
 /** 导航/圆钮小图标（Graphics 剪影，替代系统 emoji；颜色由调用方注入 Graphics） */
 const NAV_PAINTERS: Record<string, (g: Graphics) => void> = {
@@ -93,15 +92,15 @@ const NAV_PAINTERS: Record<string, (g: Graphics) => void> = {
   },
 }
 
-/** 圆钮底：深色圆面 + 金描边（无素材帧时的回退画法） */
-function circleBase(host: Node): Graphics {
+/** 圆钮底：深色圆面 + 金描边（无素材帧时的回退画法），r 默认 20 */
+function circleBase(host: Node, r = 20): Graphics {
   const g = host.addComponent(Graphics)
   g.fillColor = new Color(24, 30, 42, 170)
-  g.circle(0, 0, 20)
+  g.circle(0, 0, r)
   g.fill()
   g.lineWidth = 2
   g.strokeColor = THEME.gold
-  g.circle(0, 0, 20)
+  g.circle(0, 0, r)
   g.stroke()
   return g
 }
@@ -175,10 +174,12 @@ export class Lobby {
     this.buildNav()
 
     // ---------- 中央面板：房间表格 / 战绩页 二选一 ----------
-    const panel = attachHomeUi(this.node, 'panel', 722, 480)
-    panel.setPosition(90, -10)
+    // 几何对齐效果图（1672×941 等比缩到 1280×720，×0.7655）：面板中心约在
+    // 屏幕 x=773 → cocos +130，宽 748；底部按钮上移到面板下缘之外
+    const panel = attachHomeUi(this.node, 'panel', 748, 560)
+    panel.setPosition(130, 26)
     if (!homeFrame('panel')) {
-      drawGlassPanel(panel.addComponent(Graphics), 740, 500, 22)
+      drawGlassPanel(panel.addComponent(Graphics), 748, 560, 22)
     }
     this.contentRooms = createNode('contentRooms', panel)
     this.contentRecord = createNode('contentRecord', panel)
@@ -186,20 +187,20 @@ export class Lobby {
 
     // 标题：金色黑桃 Graphics 画（系统 emoji 与画风不符），按效果图靠面板左上
     const spade = createNode('titleSpade', this.contentRooms, 30, 30)
-    spade.setPosition(-288, 206)
+    spade.setPosition(-330, 236)
     drawSpade(spade.addComponent(Graphics), 27, THEME.goldBright)
-    const title = createLabel(this.contentRooms, '德州扑克', 30, THEME.goldBright, true)
-    title.node.setPosition(-266, 208)
+    const title = createLabel(this.contentRooms, '德州扑克', 28, THEME.goldBright, true)
+    title.node.setPosition(-308, 238)
     title.node.anchorX = 0
-    const sub = createLabel(this.contentRooms, '公开房间 · 点「加入」直接进桌（满员自动观战）', 14, THEME.textDim)
-    sub.node.setPosition(-266, 174)
+    const sub = createLabel(this.contentRooms, '公开房间 · 点「加入」直接进桌（满员自动观战）', 13, THEME.textDim)
+    sub.node.setPosition(-308, 208)
     sub.node.anchorX = 0
 
-    // 搜索 + 刷新
-    const searchHost = attachHomeUi(this.contentRooms, 'searchBox', 330, 48)
-    searchHost.setPosition(-172, 138)
+    // 搜索 + 刷新 + 计数（搜索框按效果图放面板右上区）
+    const searchHost = attachHomeUi(this.contentRooms, 'searchBox', 300, 44)
+    searchHost.setPosition(136, 174)
     if (!homeFrame('searchBox')) {
-      drawGlassPanel(searchHost.addComponent(Graphics), 330, 48, 24)
+      drawGlassPanel(searchHost.addComponent(Graphics), 300, 44, 22)
     }
     const editNode = createNode('edit', searchHost, 290, 40)
     editNode.setPosition(6, 0)
@@ -222,22 +223,22 @@ export class Lobby {
     }
     editNode.on('editing-did-ended', () => this.refreshRows())
 
-    const refresh = attachHomeUi(this.contentRooms, 'btnRefresh', 44, 44)
-    refresh.setPosition(10, 138)
+    const refresh = attachHomeUi(this.contentRooms, 'btnRefresh', 42, 42)
+    refresh.setPosition(290, 174)
     if (!homeFrame('btnRefresh')) {
-      circleBase(refresh)
+      circleBase(refresh, 20)
       paintIcon(refresh, NAV_PAINTERS.refresh, THEME.goldBright)
     }
     refresh.on(Node.EventType.TOUCH_END, () => {
       tween(refresh).to(0.16, { angle: 360 }).call(() => refresh.setRotationFromEuler(0, 0, 0)).start()
       handlers.onRefresh()
     })
-    const count = createLabel(this.contentRooms, '', 14, THEME.textDim)
-    count.node.setPosition(150, 138)
+    const count = createLabel(this.contentRooms, '', 13, THEME.textDim)
+    count.node.setPosition(-180, 174)
     this.countLabel = { string: (s: string) => (count.string = s) }
 
     // 表头
-    const headY = 104
+    const headY = 136
     const headers: Array<[string, number]> = [
       ['房间号', COLS.id],
       ['房间名称', COLS.name],
@@ -247,7 +248,8 @@ export class Lobby {
       ['操作', COLS.act],
     ]
     headers.forEach(([text, x]) => {
-      const h = createLabel(this.contentRooms, text, 14, THEME.textDim, true)
+      // 效果图表头是浅金字；textDim 在深底上发灰，对比不够
+      const h = createLabel(this.contentRooms, text, 14, THEME.gold, true)
       h.node.setPosition(x, headY)
     })
 
@@ -256,19 +258,19 @@ export class Lobby {
       this.rows.push(new RowView(this.contentRooms, ROW_TOP - i * ROW_STEP, (id) => handlers.onJoinRoom(id)))
     }
 
-    // 空列表提示：效果图里的绿色横幅（bannerGreen）+ 引导文案
-    this.emptyHint = createNode('emptyHint', this.contentRooms, 420, 84)
-    this.emptyHint.setPosition(0, -4)
+    // 空列表提示：效果图里的绿色横幅（bannerGreen）+ 引导文案，落在行区下方
+    this.emptyHint = createNode('emptyHint', this.contentRooms, 420, 76)
+    this.emptyHint.setPosition(0, -240)
     if (homeFrame('bannerGreen')) {
-      attachHomeUi(this.emptyHint, 'bannerGreen', 420, 88)
+      attachHomeUi(this.emptyHint, 'bannerGreen', 420, 76)
     } else {
       const eg = this.emptyHint.addComponent(Graphics)
       eg.fillColor = new Color(26, 68, 44, 185)
-      eg.roundRect(-210, -42, 420, 84, 16)
+      eg.roundRect(-210, -38, 420, 76, 16)
       eg.fill()
       eg.lineWidth = 1.5
       eg.strokeColor = THEME.gold
-      eg.roundRect(-210, -42, 420, 84, 16)
+      eg.roundRect(-210, -38, 420, 76, 16)
       eg.stroke()
     }
     const emptyText = createLabel(this.emptyHint, '还没有房间 — 点下方「创建房间」，开始你的游戏之旅', 16, THEME.textBright, true)
@@ -277,25 +279,25 @@ export class Lobby {
     // 战绩页
     this.buildRecordPage()
 
-    // 底部：创建房间 + 快速加入（文案烧在素材图上，不叠字）
-    const create = attachHomeUi(this.node, 'btnCreate', 208, 54)
-    create.setPosition(-14, -292)
+    // 底部：创建房间 + 快速加入（效果图里两钮贴着面板下缘，文案烧在素材图上不叠字）
+    const create = attachHomeUi(this.node, 'btnCreate', 300, 74)
+    create.setPosition(-160, -300)
     if (!homeFrame('btnCreate')) {
-      const b = createButton(this.node, '创建房间', 190, 50, shade(THEME.call, 1.35), 20)
-      b.node.setPosition(-14, -292)
+      const b = createButton(this.node, '创建房间', 280, 66, shade(THEME.call, 1.35), 22)
+      b.node.setPosition(-160, -300)
     }
     create.on(Node.EventType.TOUCH_END, () => handlers.onCreateRoom())
-    const quick = attachHomeUi(this.node, 'btnQuick', 200, 54)
-    quick.setPosition(212, -292)
+    const quick = attachHomeUi(this.node, 'btnQuick', 284, 74)
+    quick.setPosition(168, -300)
     if (!homeFrame('btnQuick')) {
-      const b = createButton(this.node, '快速加入', 180, 50, shade(THEME.raise, 1.15), 20)
-      b.node.setPosition(212, -292)
+      const b = createButton(this.node, '快速加入', 264, 66, shade(THEME.raise, 1.15), 22)
+      b.node.setPosition(168, -300)
     }
     quick.on(Node.EventType.TOUCH_END, () => this.quickJoin())
 
     // 吉祥物点缀（效果图在右下角、挨着快速加入；缺图静默跳过）
     if (homeFrame('mascot')) {
-      attachHomeUi(this.node, 'mascot', 116, 110).setPosition(556, -284)
+      attachHomeUi(this.node, 'mascot', 116, 110).setPosition(560, -296)
     }
   }
 
@@ -320,41 +322,30 @@ export class Lobby {
   }
 
   private buildTopBar(): void {
-    // 左：头像 + 昵称 + 战绩（素材信息条打底）
-    const bar = attachHomeUi(this.node, 'playerBar', 300, 100)
-    bar.setPosition(-486, 300)
+    // 左：玩家信息条。素材里已烧死「金环乌龟头像 + 金币图标」（dx0..140 环、
+    // dx388..410 金币），严禁再叠头像——旧版叠了 avatarRing+turtle 变双头像。
+    // 尺寸按效果图：303×108（缩到 1280 画布 ≈ 232×83）。
+    const bar = attachHomeUi(this.node, 'playerBar', 232, 83)
+    bar.setPosition(-492, 303)
     if (!homeFrame('playerBar')) {
-      drawGlassPanel(bar.addComponent(Graphics), 280, 84, 42)
+      drawGlassPanel(bar.addComponent(Graphics), 232, 83, 30)
     }
-    const ring = attachHomeUi(bar, 'avatarRing', 66, 66)
-    ring.setPosition(-104, 6)
-    if (!homeFrame('avatarRing')) {
-      const rg = ring.addComponent(Graphics)
-      rg.lineWidth = 3
-      rg.strokeColor = THEME.gold
-      rg.circle(0, 0, 26)
-      rg.stroke()
-    }
-    if (uiFrame('turtle')) {
-      const av = attachImage(bar, 'turtle', 44, 44)
-      av.setPosition(-104, 6)
-    }
-    const name = createLabel(bar, '游客', 19, THEME.textBright, true)
-    name.node.setPosition(-58, 16)
+    const name = createLabel(bar, '游客', 16, THEME.textBright, true)
+    name.node.setPosition(-14, 16)
     name.node.anchorX = 0
-    const stat = createLabel(bar, '登录后保存战绩', 14, THEME.textDim)
-    stat.node.setPosition(-58, -12)
-    stat.node.anchorX = 0
+    const stat = createLabel(bar, '登录后保存战绩', 14, THEME.goldBright)
+    stat.node.setPosition(88, -16)
+    stat.node.anchorX = 1
     this.nameLabels.push(
       (s: string) => (name.string = s),
       (s: string) => (stat.string = s),
     )
 
-    // 右：声音 / 全屏 / 战绩 / 退出（圆钮；声音与全屏优先用效果图素材帧，
-    // 4 钮右对齐一排：454/506/558/610，最右 610+22=632 不超半宽 640——旧版 652 会被裁掉）
+    // 右：声音 / 全屏 / 战绩 / 退出。位置按效果图四钮圆心（×0.7655 落到
+    // 1280 画布：x=371/434/496/559、y≈310、直径 46），不再贴死右边缘。
     const mkIconBtn = (x: number, name: string, draw: (host: Node) => void, onTap: () => void): Node => {
-      const node = createNode(name, this.node, 44, 44)
-      node.setPosition(x, 318)
+      const node = createNode(name, this.node, 46, 46)
+      node.setPosition(x, 310)
       draw(node)
       node.on(Node.EventType.TOUCH_END, () => {
         Tween.stopAllByTarget(node)
@@ -366,7 +357,7 @@ export class Lobby {
       })
       return node
     }
-    mkIconBtn(454, 'btnSound', (host) => {
+    mkIconBtn(370, 'btnSound', (host) => {
       if (homeFrame('iconSound')) {
         // 素材帧自带金环 + 手绘喇叭；静音时叠红斜杠并整体调灰
         this.soundFace = attachHomeUi(host, 'iconSound', 46, 46)
@@ -379,42 +370,53 @@ export class Lobby {
         sg.stroke()
         this.soundSlash.active = false
       } else {
-        circleBase(host)
+        circleBase(host, 21)
         this.soundGlyph = createIcon(host, ICON.volumeOn, 19, THEME.goldBright)
       }
     }, () => {
       this.muted = this.handlers.onSound()
       this.setMuted(this.muted)
     })
-    mkIconBtn(506, 'btnFull', (host) => {
+    mkIconBtn(433, 'btnFull', (host) => {
       if (homeFrame('iconFullscreen')) {
         attachHomeUi(host, 'iconFullscreen', 46, 46)
       } else {
-        circleBase(host)
+        circleBase(host, 21)
         createIcon(host, ICON.expand, 16, THEME.goldBright)
       }
     }, () => this.handlers.onFullscreen())
-    mkIconBtn(558, 'btnRecord', (host) => {
-      circleBase(host)
+    mkIconBtn(495, 'btnRecord', (host) => {
+      circleBase(host, 21)
       paintIcon(host, NAV_PAINTERS.bars, THEME.goldBright)
     }, () => this.setTab('record'))
-    mkIconBtn(610, 'btnExit', (host) => {
-      // 电源符号（图标字体子集没有退出键，Graphics 画：圆弧 + 竖线）
-      const g = circleBase(host)
-      g.lineWidth = 3
+    mkIconBtn(558, 'btnExit', (host) => {
+      // 退出 = 开门走人：门板 + 门把 + 向外箭头（电源符号太抽象，被吐槽看不懂）
+      const g = circleBase(host, 21)
+      g.lineWidth = 2.6
       g.strokeColor = THEME.goldBright
-      g.arc(0, -1, 9, (-70 * Math.PI) / 180, (250 * Math.PI) / 180, false)
+      g.fillColor = THEME.goldBright
+      // 门框（左开）
+      g.roundRect(-10, -11, 12, 22, 2)
       g.stroke()
-      g.moveTo(0, -10)
-      g.lineTo(0, 2)
+      // 门把
+      g.circle(-1.5, 0, 1.3)
+      g.fill()
+      // 向外箭头
+      g.moveTo(2, 0)
+      g.lineTo(10.5, 0)
       g.stroke()
+      g.moveTo(7, 3.6)
+      g.lineTo(11.6, 0)
+      g.lineTo(7, -3.6)
+      g.close()
+      g.fill()
     }, () => this.handlers.onExitAccount())
   }
 
   private buildNav(): void {
     // 背板：效果图左栏是一块带金边的墨绿板，先垫底再摆导航项
     const navBg = createNode('navBg', this.node, 178, 274)
-    navBg.setPosition(-548, 59)
+    navBg.setPosition(-520, 66)
     const ng = navBg.addComponent(Graphics)
     ng.fillColor = new Color(16, 38, 28, 178)
     ng.roundRect(-89, -137, 178, 274, 18)
@@ -433,7 +435,7 @@ export class Lobby {
     this.navSel = [true, false, false, false]
     items.forEach((it, i) => {
       const node = createNode('nav', this.node, 150, 52)
-      node.setPosition(-548, 158 - i * 66)
+      node.setPosition(-520, 165 - i * 66)
       const g = node.addComponent(Graphics)
       const icon = createNode('navIcon', node, 26, 26)
       icon.setPosition(-44, 0)
@@ -472,15 +474,15 @@ export class Lobby {
 
   private buildRecordPage(): void {
     const title = createLabel(this.contentRecord, '战绩记录', 30, THEME.goldBright, true)
-    title.node.setPosition(0, 190)
+    title.node.setPosition(0, 236)
     const hint = createLabel(this.contentRecord, '账号生涯口径：每打完一手记 1 手，赢家再记 1 胜', 14, THEME.textDim)
-    hint.node.setPosition(0, 158)
+    hint.node.setPosition(0, 204)
     this.recName = createLabel(this.contentRecord, '游客（战绩不保存）', 26, THEME.textBright, true)
-    this.recName.node.setPosition(0, 92)
+    this.recName.node.setPosition(0, 120)
     this.recStats = createLabel(this.contentRecord, '登录 / 注册后这里显示生涯战绩', 20, THEME.goldBright, true)
-    this.recStats.node.setPosition(0, 30)
+    this.recStats.node.setPosition(0, 60)
     const back = createGlassButton(this.contentRecord, '返回房间列表', 200, 48, 18, THEME.textBright)
-    back.node.setPosition(0, -70)
+    back.node.setPosition(0, -60)
     back.node.on(Node.EventType.TOUCH_END, () => this.setTab('rooms'))
   }
 
@@ -583,7 +585,11 @@ export class Lobby {
   }
 }
 
-/** 一行房间：底条素材 + 六列内容 + 加入按钮（满员换灰钮），fill(null) 整行隐藏 */
+/**
+ * 一行房间：底条素材（787×74，左端 dx40..79 烧死锁形、右端 dx640..760 烧死
+ * 空白金胶囊）+ 六列文字 + 金胶囊上叠「加入」深色字。满员盖 btnFull 灰钮
+ * 素材。整行可点。fill(null) 整行隐藏。
+ */
 class RowView {
   readonly node: Node
   private readonly idL: ReturnType<typeof createLabel>
@@ -591,7 +597,8 @@ class RowView {
   private readonly blindL: ReturnType<typeof createLabel>
   private readonly humansL: ReturnType<typeof createLabel>
   private readonly stateL: ReturnType<typeof createLabel>
-  private readonly joinBtn: Node
+  private readonly joinOverlay: Node
+  private readonly joinLabel: ReturnType<typeof createLabel>
   private readonly joinFallback?: { label: { string: string }; node: Node }
   private roomId = ''
 
@@ -603,12 +610,13 @@ class RowView {
       drawGlassPanel(row.addComponent(Graphics), 690, 50, 14)
       // 素材底条左端自带锁形装饰，只有回退模式才补贴小锁（否则双锁重叠）
       const lock = attachHomeUi(this.node, 'lockOpen', 30, 28)
-      lock.setPosition(-322, 0)
+      lock.setPosition(-292, 0)
       if (!homeFrame('lockOpen')) {
         lock.destroy()
       }
     }
-    this.idL = createLabel(this.node, '', 15, THEME.textDim)
+    // 房间号用亮白粗体：旧版 textDim 灰字压在深绿底上对比不足
+    this.idL = createLabel(this.node, '', 15, THEME.textBright, true)
     this.idL.node.setPosition(COLS.id, 0)
     this.nameL = createLabel(this.node, '', 16, THEME.textBright, true)
     this.nameL.node.setPosition(COLS.name, 0)
@@ -618,20 +626,28 @@ class RowView {
     this.humansL.node.setPosition(COLS.humans, 0)
     this.stateL = createLabel(this.node, '', 15, THEME.textBright)
     this.stateL.node.setPosition(COLS.state, 0)
-    this.joinBtn = attachHomeUi(this.node, 'btnJoin', 82, 34)
-    this.joinBtn.setPosition(COLS.act, 0)
-    if (!homeFrame('btnJoin')) {
-      const b = createGlassButton(this.node, '加入', 82, 34, 16, THEME.goldBright)
+    if (homeFrame('roomRow')) {
+      // 素材行右端自带空白金胶囊（对准 COLS.act）。满员先盖 btnFull 灰钮、
+      // 再放最上层「加入/已满」字，层序错了字会被灰钮盖住
+      this.joinOverlay = attachHomeUi(this.node, 'btnFull', 100, 40)
+      this.joinOverlay.setPosition(COLS.act, 0)
+      this.joinOverlay.active = false
+      this.joinLabel = createLabel(this.node, '', 15, new Color(64, 44, 14), true)
+      this.joinLabel.node.setPosition(COLS.act, 0)
+    } else {
+      // 回退模式没有烧死金钮，用玻璃按钮补位（自带加入/已满字切换）
+      const b = createGlassButton(this.node, '加入', 100, 34, 16, THEME.goldBright)
       b.node.setPosition(COLS.act, 0)
       this.joinFallback = b
+      this.joinLabel = b.label
+      this.joinOverlay = createNode('noOverlay', this.node, 0, 0)
     }
-    const tap = (): void => {
+    // 整行可点（点行 = 加入），比只点小按钮的手感好
+    this.node.on(Node.EventType.TOUCH_END, () => {
       if (this.roomId) {
         onJoin(this.roomId)
       }
-    }
-    this.joinBtn.on(Node.EventType.TOUCH_END, tap)
-    this.joinFallback?.node.on(Node.EventType.TOUCH_END, tap)
+    })
   }
 
   fill(r: RoomInfo | null): void {
@@ -648,15 +664,18 @@ class RowView {
     const full = r.humans >= r.seats
     this.stateL.string = full ? '已满' : r.inHand ? '游戏中' : '等待中'
     this.stateL.color = full ? THEME.textDim : r.inHand ? shade(THEME.call, 1.5) : THEME.textBright
-    // 素材钮切换：满员换「已满」灰钮（找不到帧时退玻璃灰字按钮）
     if (this.joinFallback) {
       this.joinFallback.label.string = full ? '已满' : '加入'
     } else {
-      const frame = homeFrame(full ? 'btnFull' : 'btnJoin')
-      const sp = this.joinBtn.getComponent(Sprite)
+      // 素材行：正常显示烧死金胶囊 + 深色「加入」；满员盖 btnFull 灰钮换白字
+      this.joinLabel.string = full ? '已满' : '加入'
+      this.joinLabel.color = full ? THEME.textBright : new Color(64, 44, 14)
+      const frame = homeFrame('btnFull')
+      const sp = this.joinOverlay.getComponent(Sprite)
       if (sp && frame) {
         sp.spriteFrame = frame
       }
+      this.joinOverlay.active = full
     }
   }
 }
