@@ -324,7 +324,7 @@ export class Lobby {
 
     // 空列表提示：效果图里的绿色横幅（bannerGreen）+ 引导文案，居中落在行区中段
     this.emptyHint = createNode("emptyHint", this.contentRooms, 420, 76);
-    this.emptyHint.setPosition(0, -100);
+    this.emptyHint.setPosition(0, 0);
     if (homeFrame("bannerGreen")) {
       attachHomeUi(this.emptyHint, "bannerGreen", 420, 76);
     } else {
