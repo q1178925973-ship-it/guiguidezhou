@@ -57,23 +57,23 @@ export class CreateRoomDialog {
     const title = createLabel(this.panel, '创建房间', 28, THEME.goldBright, true)
     title.node.setPosition(0, 212)
 
-    // 房名
+    // 房名（标签上移 12，与输入框拉开间距，不再被玻璃底压住底缘）
     const nameTitle = createLabel(this.panel, '房间名称', 15, THEME.textDim)
-    nameTitle.node.setPosition(-PANEL_W / 2 + 34, 160)
+    nameTitle.node.setPosition(-PANEL_W / 2 + 34, 172)
     nameTitle.node.anchorX = 0
     this.nameBox = this.buildBox('我的房间', 134)
 
-    // 人数步进
+    // 人数步进（[−] 数字 [+] 整组水平居中于弹窗：组合宽 176，故按钮 ±66、数字居中 0）
     const seatTitle = createLabel(this.panel, '桌子总人数（空位由机器人补齐）', 15, THEME.textDim)
     seatTitle.node.setPosition(-PANEL_W / 2 + 34, 84)
     seatTitle.node.anchorX = 0
     const minus = createGlassButton(this.panel, '−', 44, 44, 26, THEME.textBright)
-    minus.node.setPosition(-40, 44)
+    minus.node.setPosition(-66, 44)
     minus.node.on(Node.EventType.TOUCH_END, () => this.stepSeats(-1))
     this.seatLabel = createLabel(this.panel, '6 人', 26, THEME.goldBright, true)
-    this.seatLabel.node.setPosition(26, 44)
+    this.seatLabel.node.setPosition(0, 44)
     const plus = createGlassButton(this.panel, '+', 44, 44, 26, THEME.goldBright)
-    plus.node.setPosition(92, 44)
+    plus.node.setPosition(66, 44)
     plus.node.on(Node.EventType.TOUCH_END, () => this.stepSeats(1))
 
     // 底注档位
@@ -117,7 +117,7 @@ export class CreateRoomDialog {
     pg.fillColor = THEME.goldBright
     pg.strokeColor = THEME.goldBright
     drawLockGlyph(pg, 0.8)
-    this.passBox = this.buildBox('留空不设密码，设密码后加入需验证', -140)
+    this.passBox = this.buildBox('留空不设密码，设密码后加入需验证', -145)
 
     const cancel = createButton(this.panel, '取消', 150, 52, THEME.panel, 20)
     cancel.node.setPosition(-88, -210)

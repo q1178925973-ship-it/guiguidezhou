@@ -212,15 +212,17 @@ export class Lobby {
 
     // ---------- 中央面板：房间表格 / 战绩页 二选一 ----------
     // 手绘面板（用户要求不再用雪碧图元素）：748×528 横向居中于「左导航右缘 ~
-    // 屏幕右缘」之间（cocos x=104），纵向落在顶栏圆钮下缘与底部大钮上缘之间
+    // 屏幕右缘」之间（cocos x=74），纵向落在顶栏圆钮下缘与底部大钮上缘之间
     // （y=15 → 279..-249），不遮顶栏四圆钮、不压底部按钮
     const panel = createNode("panel", this.node, 748, 528);
-    panel.setPosition(104, 15);
+    panel.setPosition(74, 15);
     drawNavPanel(panel.addComponent(Graphics), 748, 528, 22);
     this.contentRooms = createNode("contentRooms", panel);
     this.contentRecord = createNode("contentRecord", panel);
     this.contentRecord.active = false;
 
+    // 头部两行：眉行（副标题 + 计数）+ 主行（标题与搜索框同一行，左标题右搜索/刷新，
+    // 间距互不重叠——刷新钮不再压在输入框上）
     const title = createLabel(
       this.contentRooms,
       "德州扑克",
@@ -228,7 +230,7 @@ export class Lobby {
       THEME.goldBright,
       true,
     );
-    title.node.setPosition(-270, 228);
+    title.node.setPosition(-344, 164);
     title.node.anchorX = 0;
     const sub = createLabel(
       this.contentRooms,
@@ -236,12 +238,12 @@ export class Lobby {
       13,
       THEME.textDim,
     );
-    sub.node.setPosition(-270, 200);
+    sub.node.setPosition(-344, 198);
     sub.node.anchorX = 0;
 
     // 搜索 + 刷新 + 计数（手绘：墨绿玻璃感搜索框 + 左端放大镜 + 金圈刷新圆钮）
     const searchHost = createNode("searchBox", this.contentRooms, 300, 44);
-    searchHost.setPosition(136, 164);
+    searchHost.setPosition(34, 164);
     drawNavPanel(searchHost.addComponent(Graphics), 300, 44, 12, 190);
     paintIcon(searchHost, NAV_PAINTERS.search, THEME.goldBright, -126, 0);
     const editNode = createNode("edit", searchHost, 240, 40);
@@ -266,7 +268,7 @@ export class Lobby {
     editNode.on("editing-did-ended", () => this.refreshRows());
 
     const refresh = createNode("btnRefresh", this.contentRooms, 44, 44);
-    refresh.setPosition(290, 164);
+    refresh.setPosition(226, 164);
     circleBase(refresh, 20);
     paintIcon(refresh, NAV_PAINTERS.refresh, THEME.goldBright);
     refresh.on(Node.EventType.TOUCH_END, () => {
@@ -276,8 +278,10 @@ export class Lobby {
         .start();
       handlers.onRefresh();
     });
+    // 计数挪到眉行右端，与副标题同高（主行已无空位）
     const count = createLabel(this.contentRooms, "", 13, THEME.textDim);
-    count.node.setPosition(-180, 164);
+    count.node.setPosition(344, 198);
+    count.node.anchorX = 1;
     this.countLabel = { string: (s: string) => (count.string = s) };
 
     // 表头
@@ -305,9 +309,9 @@ export class Lobby {
       );
     }
 
-    // 空列表提示：效果图里的绿色横幅（bannerGreen）+ 引导文案，落在行区下方
+    // 空列表提示：效果图里的绿色横幅（bannerGreen）+ 引导文案，居中落在行区中段
     this.emptyHint = createNode("emptyHint", this.contentRooms, 420, 76);
-    this.emptyHint.setPosition(0, -180);
+    this.emptyHint.setPosition(0, -100);
     if (homeFrame("bannerGreen")) {
       attachHomeUi(this.emptyHint, "bannerGreen", 420, 76);
     } else {
