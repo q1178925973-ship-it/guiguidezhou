@@ -25,6 +25,10 @@ server/data/
 # 本地工具与部署密钥（不入库）
 tools/
 
+# 冒烟/调试截图与日志（探针可再生，不入库）
+shots/
+/image.png
+
 # BGM 加密源素材（不可用、且体积大）
 *.ncm
 *.ncm.meta
