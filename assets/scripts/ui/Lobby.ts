@@ -36,7 +36,7 @@ const COLS = {
   blind: 18,
   humans: 135,
   state: 215,
-  act: 294, // 加入胶囊右移 15+10（原 269 压状态列；v26.3 用户要求再 +10）
+  act: 304, // 加入胶囊右移 15+10（原 269 压状态列；v26.3 用户要求再 +10）
 };
 const ROW_TOP = 112;
 const ROW_STEP = 52;
@@ -244,7 +244,7 @@ export class Lobby {
 
     // 搜索 + 刷新 + 计数（手绘：墨绿玻璃感搜索框 + 左端放大镜 + 金圈刷新圆钮）
     const searchHost = createNode("searchBox", this.contentRooms, 300, 44);
-    searchHost.setPosition(34, 196);
+    searchHost.setPosition(74, 196);
     drawNavPanel(searchHost.addComponent(Graphics), 300, 44, 12, 190);
     paintIcon(searchHost, NAV_PAINTERS.search, THEME.goldBright, -126, 0);
     const editNode = createNode("edit", searchHost, 240, 40);
@@ -269,7 +269,7 @@ export class Lobby {
     editNode.on("editing-did-ended", () => this.refreshRows());
 
     const refresh = createNode("btnRefresh", this.contentRooms, 44, 44);
-    refresh.setPosition(226, 196);
+    refresh.setPosition(266, 196);
     // v26.3：刷新钮改用效果图雪碧图元素（Graphics.arc 大弧在部分设备被拉成直棒，
     // 手绘两版都被用户判不合格）；素材缺失时回退手绘
     attachHomeUi(refresh, "btnRefresh", 44, 44);

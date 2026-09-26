@@ -667,6 +667,11 @@ export class OnlineGameApp extends Component {
     this.messages.hideBanner()
     this.placeDealerMark(snap)
     this.heroDealt = false
+    // 中局加入 / 断线重连：首包快照里已翻的公共牌直接补上桌，
+    // 否则 applySnapshot 的增量分支只在「比上一包多」时发牌，存量牌永远空着
+    snap.community.forEach((cj, k) => {
+      this.community.dealCard(fromCardJ(cj), k, DECK_POS, 0.05 + k * 0.08)
+    })
     snap.players.forEach((p, seat) => {
       const view = this.L(seat, snap.you.seat)
       const hole = view === 0 && p.hole ? p.hole.map(fromCardJ) : null
