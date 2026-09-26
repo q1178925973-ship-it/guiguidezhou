@@ -36,9 +36,9 @@ const COLS = {
   blind: 18,
   humans: 135,
   state: 215,
-  act: 269,
+  act: 284, // 加入胶囊右移 15（原 269 会压住状态列文字）
 };
-const ROW_TOP = 110;
+const ROW_TOP = 112;
 const ROW_STEP = 52;
 const ROW_COUNT = 7;
 
@@ -79,14 +79,15 @@ const NAV_PAINTERS: Record<string, (g: Graphics) => void> = {
     g.roundRect(4, -10, 5, 18, 1.5);
     g.fill();
   },
-  // 刷新：270° 圆弧 + 箭头（手绘，替代素材圆钮）
+  // 刷新：270° 圆弧 + 箭头（手绘，替代素材圆钮）。
+  // v26.2 放大：原 r=8/线宽 3 在 44px 钮里只有 16px 大，用户反馈看不见 → r=13/线宽 4.5
   refresh: (g) => {
-    g.lineWidth = 3;
-    g.arc(0, 0, 8, Math.PI * 0.35, Math.PI * 1.75, false);
+    g.lineWidth = 4.5;
+    g.arc(0, 0, 13, Math.PI * 0.35, Math.PI * 1.75, false);
     g.stroke();
-    g.moveTo(8.9, -2.5);
-    g.lineTo(3.9, -3.9);
-    g.lineTo(7.5, -7.5);
+    g.moveTo(14.5, -4.1);
+    g.lineTo(6.3, -6.3);
+    g.lineTo(12.2, -12.2);
     g.close();
     g.fill();
   },
@@ -221,8 +222,8 @@ export class Lobby {
     this.contentRecord = createNode("contentRecord", panel);
     this.contentRecord.active = false;
 
-    // 头部两行：眉行（副标题 + 计数）+ 主行（标题与搜索框同一行，左标题右搜索/刷新，
-    // 间距互不重叠——刷新钮不再压在输入框上）
+    // 头部两行（v26.2 上移紧凑化：眉行 y232 + 主行 y196，吃掉面板顶部死区；
+    // 表头 y154 与行区 y112..-200 分层，不再被第一行盖住）
     const title = createLabel(
       this.contentRooms,
       "德州扑克",
@@ -230,7 +231,7 @@ export class Lobby {
       THEME.goldBright,
       true,
     );
-    title.node.setPosition(-344, 164);
+    title.node.setPosition(-344, 196);
     title.node.anchorX = 0;
     const sub = createLabel(
       this.contentRooms,
@@ -238,12 +239,12 @@ export class Lobby {
       13,
       THEME.textDim,
     );
-    sub.node.setPosition(-344, 198);
+    sub.node.setPosition(-344, 232);
     sub.node.anchorX = 0;
 
     // 搜索 + 刷新 + 计数（手绘：墨绿玻璃感搜索框 + 左端放大镜 + 金圈刷新圆钮）
     const searchHost = createNode("searchBox", this.contentRooms, 300, 44);
-    searchHost.setPosition(34, 164);
+    searchHost.setPosition(34, 196);
     drawNavPanel(searchHost.addComponent(Graphics), 300, 44, 12, 190);
     paintIcon(searchHost, NAV_PAINTERS.search, THEME.goldBright, -126, 0);
     const editNode = createNode("edit", searchHost, 240, 40);
@@ -268,7 +269,7 @@ export class Lobby {
     editNode.on("editing-did-ended", () => this.refreshRows());
 
     const refresh = createNode("btnRefresh", this.contentRooms, 44, 44);
-    refresh.setPosition(226, 164);
+    refresh.setPosition(226, 196);
     circleBase(refresh, 20);
     paintIcon(refresh, NAV_PAINTERS.refresh, THEME.goldBright);
     refresh.on(Node.EventType.TOUCH_END, () => {
@@ -280,12 +281,12 @@ export class Lobby {
     });
     // 计数挪到眉行右端，与副标题同高（主行已无空位）
     const count = createLabel(this.contentRooms, "", 13, THEME.textDim);
-    count.node.setPosition(344, 198);
+    count.node.setPosition(344, 232);
     count.node.anchorX = 1;
     this.countLabel = { string: (s: string) => (count.string = s) };
 
-    // 表头
-    const headY = 124;
+    // 表头（v26.2：124 → 154，落到搜索框下方净空区，与第一行拉开 9px）
+    const headY = 154;
     const headers: Array<[string, number]> = [
       ["房间号", COLS.id],
       ["房间名称", COLS.name],
