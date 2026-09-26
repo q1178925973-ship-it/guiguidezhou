@@ -235,9 +235,13 @@ export class OnlineGameApp extends Component {
       onLeave: () => this.net.send({ t: 'leaveRoom' }),
     })
     this.toolbar.setLeaveVisible(true)
-    // 浏览器自动播放策略：等玩家第一次触摸后再起背景音乐（登录弹窗点击即算手势）
+    // 浏览器自动播放策略：等玩家第一次触摸后再起背景音乐（登录弹窗点击即算手势）。
+    // 桌面端鼠标点击不产生全局 TOUCH_END（UI 按钮的节点级触摸另有一套模拟），
+    // MOUSE_UP 一起挂上，手机端则只有 TOUCH_END 会到——userGesture 幂等，重复无害
     this.bgm = new Bgm(this.node)
-    input.on(Input.EventType.TOUCH_END, () => this.bgm.userGesture())
+    const onGesture = () => this.bgm.userGesture()
+    input.on(Input.EventType.TOUCH_END, onGesture)
+    input.on(Input.EventType.MOUSE_UP, onGesture)
     this.chatLog = new ChatLog(this.tableRoot, new Vec3(-478, -232, 0), (text) =>
       this.net.send({ t: 'chat', text }),
     )

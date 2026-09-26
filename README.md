@@ -16,6 +16,7 @@
 - **观战透视（用户拍板）**：观战者（seat=-1）全场底牌直接亮面、含已弃牌玩家（要看弃牌点数）。服务端 `snapshotFor` 给观战者下发全场 `hole` 与 `revealed`；客户端发牌走新链 `CardView.dealAndFlip`（飞入落位后同条 tween 紧接翻面，一张牌一条链无并发竞争），另留 2s 补扫保险丝。**在座玩家视角不变**：他人底牌仍只见牌背，自己的牌只发给自己
 - **下注筹码压手牌修复（6/5/3 人桌）**：椭圆拟合布局的下注点原是「指向桌心 × 模长 70」，右侧座位正对自家牌槽必压牌。v26.7 两段规则：右半侧沿同方向走到桌心 55% 处（与 8 人实测表右中位 -276 落点同带）；左/顶侧按「主轴清障」外推——近水平座位水平行程 ≥88（牌对横排 ±51 + 药丸半宽 28 + 裕量）、近竖直 ≥66，否则补足。E2E 场景图 bbox 仲裁：6 人桌 12 牌 × 3 注零相交（修前左上位压牌 11px、右侧整组遮挡）
 - **残缺首帧广播根治（v26.7 回归的根因）**：`GameEngine.startHand` 发底牌前先 emit `hand-start`/`blinds`，而 `Table.onEngineEvent` 对所有事件无条件 `broadcastState`——客户端会收到 handNo 已 +1 但全场 holeCount=0 的残缺帧 ×2，随后的完整帧 handNo 不变不再触发重发布局。旧版客户端无条件发牌背掩盖了它；v26.7 的 `holeCount>0` 门让 bot 座位牌永远空着。修法双保险：服务端掐掉这两帧（完整首帧由 `deal-hole` 与 `beginHand` 末尾同 tick 推送，客户端无感知）；客户端加保险丝——同一手「全场 0 牌 → 有牌」过渡即补跑一次 `startHandView`
+- **BGM 回归修复**：两处导致「听不到歌」——① `Bgm.resolveUrl` 把 localhost/127.0.0.1 整个排除（早期本地无音频文件的防 404 措施，本地 server/web/audio 早已有文件）；② 桌面浏览器鼠标点击**不产生**全局 `Input.TOUCH_END`（手机真触摸才有；UI 按钮的节点级触摸另有一套模拟所以按钮正常），首次手势回调永不触发。修法：resolveUrl 全环境生效（缺文件时 loadRemote 静默跳过），手势回调 TOUCH_END + MOUSE_UP 双挂（userGesture 幂等）。E2E：桌面点击「游客进入」即见 `/audio/bgm.mp3` 网络请求
 - 验证：自检 71/71（新增观战透视断言：8 家在局底牌全场可见）；dbg-midjoin 观战 12/12 亮面 + 公共牌 3/3；dbg-betpos 零遮挡；smoke-lobby 17/17
 - 教训：VSCode 终端继承 `ELECTRON_RUN_AS_NODE=1` 会让 CocosCreator.exe 以纯 Node 跑（--project 报错 exit 9/36），构建须 `env -u ELECTRON_RUN_AS_NODE` 前缀；构建退出码 36 但日志含 "build Task Finished" 属良性，以 bundle 内容标记（grep dealAndFlip/holeCount）与 mtime 为准
 
