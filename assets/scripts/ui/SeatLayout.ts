@@ -55,7 +55,8 @@ export const PHASE_NAMES: Partial<Record<Phase, string>> = {
  * 椭圆参数取自 8 人表 8 锚点的拟合：中心 (81,80)、rx 494、ry 195；
  * 座位 i 角度 θ = -90° + i·360°/n（0 号位在正下方，随 n 增大逆时针铺开），
  * 0 号位仍钉在实测 (74,-130)（与 4/8 人表一致，自己永远在下方）。
- * 下注点 = 座位指向桌心方向 70（首版统一模长，实测表是 68~75 一带）。
+ * 下注点 = 座位指向桌心：左/顶侧模长 70 起步、主轴清障外推（详见循环内注释），
+ * 右半侧走到桌心 55% 处（右侧指向桌心会正对自家牌槽，短模长筹码压牌）。
  */
 export function seatLayoutFor(n: number): SeatLayoutEntry[] {
   if (n === 8) {
@@ -76,15 +77,26 @@ export function seatLayoutFor(n: number): SeatLayoutEntry[] {
       i === 0
         ? new Vec3(74, -130, 0)
         : new Vec3(Math.round(cx + rx * Math.cos(th)), Math.round(cy + ry * Math.sin(th)), 0)
-    // 下注方向：座位 → 桌心，统一模长 70
+    // 下注方向：座位 → 桌心。左/顶侧贴近自家（模长 70 起，与实测表一致），
+    // 但按「主轴清障」外推：两牌槽对横排 ±51、下注药丸半宽 28 / 半高 22，
+    // 近水平座位需水平行程 ≥88、近竖直需 ≥66，否则筹码压到自家牌右缘
+    // （v26.7 实测左上位模长 70 只走到 68，压牌 11px）；
+    // 右半侧例外——「指向桌心」正对自家牌槽与横幅，短模长必压牌（v26.7 修复），
+    // 改为沿同方向走到桌心 55% 处（与 8 人实测表右中位 -276 落点同带）
     const dx = cx - pos.x
     const dy = cy - pos.y
     const len = Math.max(1, Math.sqrt(dx * dx + dy * dy))
-    list.push({
-      pos,
-      bet: new Vec3(Math.round((dx / len) * 70), Math.round((dy / len) * 70), 0),
-      faceUp: i === 0,
-    })
+    const ux = dx / len
+    const uy = dy / len
+    const bet =
+      pos.x > cx + 60
+        ? new Vec3(Math.round(dx * 0.55), Math.round(dy * 0.55), 0)
+        : new Vec3(
+            Math.round(ux * Math.max(70, Math.abs(ux) >= Math.abs(uy) ? 88 / Math.abs(ux) : 0)),
+            Math.round(uy * Math.max(70, Math.abs(uy) > Math.abs(ux) ? 66 / Math.abs(uy) : 0)),
+            0,
+          )
+    list.push({ pos, bet, faceUp: i === 0 })
   }
   return list
 }

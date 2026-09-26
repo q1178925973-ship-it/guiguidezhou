@@ -619,6 +619,13 @@ export class OnlineGameApp extends Component {
     // 手数变化即新一手：清场重发（重置对局后 handNo 归 1，用 matchSeq 纪元号区分「重开的新一手」）
     if (!prev || snap.handNo !== prev.handNo || snap.matchSeq !== prev.matchSeq) {
       this.startHandView(snap)
+    } else if (
+      // 保险丝（v26.7 回归教训）：同一手先到「未发牌」残缺帧、底牌随后才到的场景，
+      // handNo 不变走不到上面的 startHandView，座位牌会永远空着——补发一手
+      prev.players.every((p) => p.holeCount === 0) &&
+      snap.players.some((p) => p.holeCount > 0)
+    ) {
+      this.startHandView(snap)
     } else if (snap.community.length > prev.community.length) {
       this.sweepBets(snap)
       this.sfx.flip()
@@ -681,16 +688,24 @@ export class OnlineGameApp extends Component {
     })
     snap.players.forEach((p, seat) => {
       const view = this.L(seat, snap.you.seat)
-      const hole = view === 0 && p.hole ? p.hole.map(fromCardJ) : null
-      if (hole) {
+      // 服务端只把 hole 下发给「自己」和观战者（观战透视：全场真实底牌到货即亮面）；
+      // 在座玩家看他人 hole 缺席 → 背面占位。holeCount=0（等待入座/局间）不发占位牌，
+      // 观战者不会误以为等待中的玩家手里有牌
+      const hole = p.hole ? p.hole.map(fromCardJ) : null
+      if (view === 0 && hole) {
         this.heroDealt = true
       }
-      // faceUp 只在真拿到自己的底牌时开：观战（you.seat=-1）时 view0 坐的是别的玩家，
-      // 占位牌 2♠ 若跟着座位默认翻面，整局都会显示成「对 2」（v26.6 修复）
-      this.seats[view].dealCards(hole ?? [DUMMY, DUMMY], DECK_POS, 0.1 + view * 0.12, !!hole)
+      if (p.holeCount > 0 || view === 0) {
+        this.seats[view].dealCards(hole ?? [DUMMY, DUMMY], DECK_POS, 0.1 + view * 0.12, !!hole)
+      }
     })
     this.sfx.deal()
     this.lastBets = snap.players.map((p) => p.betRound)
+    // 观战透视保险丝：若任何座位牌因动画异常未翻面，开局 2s 后补扫一次
+    // （已翻面的 isFaceUp 短路，无重复动画）
+    if (snap.you.seat < 0) {
+      this.scheduleOnce(() => this.seats.forEach((s) => s.revealCards()), 2)
+    }
   }
 
   private refreshAll(snap: Snapshot): void {

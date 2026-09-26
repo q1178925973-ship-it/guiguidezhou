@@ -11,6 +11,14 @@
 
 ## 更新日志
 
+### 2026-09-27 观战透视全场亮牌 + 下注筹码遮挡修复 + 残缺首帧广播根治（v26.7）
+
+- **观战透视（用户拍板）**：观战者（seat=-1）全场底牌直接亮面、含已弃牌玩家（要看弃牌点数）。服务端 `snapshotFor` 给观战者下发全场 `hole` 与 `revealed`；客户端发牌走新链 `CardView.dealAndFlip`（飞入落位后同条 tween 紧接翻面，一张牌一条链无并发竞争），另留 2s 补扫保险丝。**在座玩家视角不变**：他人底牌仍只见牌背，自己的牌只发给自己
+- **下注筹码压手牌修复（6/5/3 人桌）**：椭圆拟合布局的下注点原是「指向桌心 × 模长 70」，右侧座位正对自家牌槽必压牌。v26.7 两段规则：右半侧沿同方向走到桌心 55% 处（与 8 人实测表右中位 -276 落点同带）；左/顶侧按「主轴清障」外推——近水平座位水平行程 ≥88（牌对横排 ±51 + 药丸半宽 28 + 裕量）、近竖直 ≥66，否则补足。E2E 场景图 bbox 仲裁：6 人桌 12 牌 × 3 注零相交（修前左上位压牌 11px、右侧整组遮挡）
+- **残缺首帧广播根治（v26.7 回归的根因）**：`GameEngine.startHand` 发底牌前先 emit `hand-start`/`blinds`，而 `Table.onEngineEvent` 对所有事件无条件 `broadcastState`——客户端会收到 handNo 已 +1 但全场 holeCount=0 的残缺帧 ×2，随后的完整帧 handNo 不变不再触发重发布局。旧版客户端无条件发牌背掩盖了它；v26.7 的 `holeCount>0` 门让 bot 座位牌永远空着。修法双保险：服务端掐掉这两帧（完整首帧由 `deal-hole` 与 `beginHand` 末尾同 tick 推送，客户端无感知）；客户端加保险丝——同一手「全场 0 牌 → 有牌」过渡即补跑一次 `startHandView`
+- 验证：自检 71/71（新增观战透视断言：8 家在局底牌全场可见）；dbg-midjoin 观战 12/12 亮面 + 公共牌 3/3；dbg-betpos 零遮挡；smoke-lobby 17/17
+- 教训：VSCode 终端继承 `ELECTRON_RUN_AS_NODE=1` 会让 CocosCreator.exe 以纯 Node 跑（--project 报错 exit 9/36），构建须 `env -u ELECTRON_RUN_AS_NODE` 前缀；构建退出码 36 但日志含 "build Task Finished" 属良性，以 bundle 内容标记（grep dealAndFlip/holeCount）与 mtime 为准
+
 ### 2026-09-26 观战对2修复 + 结算/弹窗置顶 + 开锁图形重画（v26.6）
 
 - **观战不再是「对 2」（bug 修复）**：中途加入观战（you.seat=-1）时英雄位坐的是别的玩家，但 `startHandView` 发占位牌 `DUMMY=2♠` 时跟着座位默认 `faceUp` 翻面，观战者整局看着两张亮着的 2♠。修复：`dealCards` 增加显式 `faceUp` 参数，只在真拿到自己底牌（`!!hole`）时翻；真实底牌迟到时由 `applySnapshot` 补 `setHoleCards + revealCards`。E2E 场景图仲裁：观战者 12 张座位牌全背面、3 张公共牌全正面

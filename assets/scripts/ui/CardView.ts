@@ -85,6 +85,22 @@ export class CardView {
       .start()
   }
 
+  /** 飞入落位后紧接着翻面（同一条 tween 链）——观战透视全场亮面用。
+   *  翻面挂进发牌链而非另开延迟 tween：一张牌一条 tween，不存在两条并发
+   *  tween 竞争同一节点的时序问题 */
+  dealAndFlip(from: Vec3, delay = 0): void {
+    const to = this.node.position.clone()
+    this.node.setPosition(from)
+    this.node.setScale(0.7, 0.7, 1)
+    tween(this.node)
+      .delay(delay)
+      .to(0.26, { position: to, scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' })
+      .to(0.12, { scale: new Vec3(0.06, 1, 1) })
+      .call(() => this.showFace())
+      .to(0.14, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+      .start()
+  }
+
   /** 翻牌动画：横向压扁 → 亮面 → 展开 */
   flip(delay = 0): void {
     tween(this.node)

@@ -88,9 +88,10 @@ export class SeatView {
       view.setCard(card)
       this.cardViews.push(view)
       const delay = baseDelay + i * 0.18
-      view.dealFrom(localFrom, delay)
       if (faceUp) {
-        view.flip(delay + 0.32)
+        view.dealAndFlip(localFrom, delay)
+      } else {
+        view.dealFrom(localFrom, delay)
       }
     })
   }

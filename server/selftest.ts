@@ -360,8 +360,13 @@ async function runSelftest(): Promise<void> {
       snapIris.players.length === 8 ? pass('快照含 8 名玩家') : fail(`快照玩家数 ${snapIris.players.length}`)
       const anyHidden = snapIris.players.some((p) => p.holeCount > 0)
       anyHidden ? pass('观战者能看到各家牌背数量') : fail('观战者看不到牌背')
-      const leak = JSON.stringify(snapIris).includes('"hole":')
-      !leak ? pass('观战者收不到任何底牌') : fail('观战者收到了底牌（信息泄露）')
+      // 观战透视（v26.7 拍板）：观战者全场底牌直接可见（含已弃牌玩家），
+      // 旧断言「观战者收不到任何底牌」按新口径反转
+      const holding = snapIris.players.filter((p) => p.holeCount > 0)
+      const xray = holding.length > 0 && holding.every((p) => (p.hole?.length ?? 0) === 2)
+      xray
+        ? pass(`观战透视：${holding.length} 家在局底牌全场可见`)
+        : fail('观战者未收到在局玩家的底牌')
       const stats = snapIris.players.every((p) => typeof p.won === 'number' && typeof p.played === 'number')
       stats ? pass('快照含胜负局数统计') : fail('快照缺少胜负局数统计')
     } else {

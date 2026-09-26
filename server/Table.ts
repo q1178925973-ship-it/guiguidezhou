@@ -530,6 +530,14 @@ export class Table {
   }
 
   private onEngineEvent(ev: GameEvent): void {
+    // startHand 在发底牌前先 emit hand-start / blinds，此刻的快照是残缺中间态
+    // （handNo 已 +1、phase 已 preflop，但全场 holeCount=0）：广播出去，客户端会按
+    // 「新一手」清场布局却发不出任何座位牌；随后完整帧 handNo 不变、不再触发重发，
+    // 别家手牌就永远空着（v26.7 回归根源）。完整首帧由 deal-hole 事件与 beginHand
+    // 末尾的 broadcastState 同一 tick 推送，掐掉这两帧客户端无感知
+    if (ev === 'hand-start' || ev === 'blinds') {
+      return
+    }
     if (ev === 'hand-end') {
       this.handOver = true
       this.onDirty()
@@ -734,6 +742,9 @@ export class Table {
     const pot = e.potAmount + e.players.reduce((s, p) => s + p.betRound, 0)
     // 弃牌亮牌只发给仍在局内的在座玩家（自己的牌自己始终可见，摊牌后全员可见）
     const meInHand = client.seat >= 0 && e.players[client.seat].inHand
+    // 观战透视（用户拍板）：观战者（seat=-1）全场底牌直接可见，含已弃牌玩家
+    // （用户要看弃牌点数）——在座玩家（含等待入座者）视角不变，他人底牌只见牌背
+    const spectate = client.seat < 0
     const players: PlayerSnap[] = e.players.map((p, i) => {
       const snap: PlayerSnap = {
         name: this.seatName(i),
@@ -750,11 +761,12 @@ export class Table {
         holeCount: p.hole.length,
       }
       const rv = this.reveal.get(i)
-      if (rv && (client.seat === i || this.revealAll || meInHand)) {
+      if (rv && (client.seat === i || this.revealAll || meInHand || spectate)) {
         snap.revealed = rv.map(toCardJ)
       }
-      // 自己的底牌只发给自己（弃牌后自己仍可见，他人始终看不到）
-      if (client.seat === i && p.hole.length > 0) {
+      // 自己的底牌只发给自己（弃牌后自己仍可见，他人始终看不到）；
+      // 观战透视：观战者额外拿到全场的（弃牌者的底牌引擎保留到局末，同样下发）
+      if ((client.seat === i || spectate) && p.hole.length > 0) {
         snap.hole = p.hole.map(toCardJ)
       }
       return snap
