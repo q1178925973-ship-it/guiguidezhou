@@ -189,6 +189,22 @@ export class Table {
     return this.seatAccount.some((a, i) => !!a && now < this.reserveUntil[i])
   }
 
+  /** 假如该连接现在主动退房，桌面上是否就没人了（最后一人退房弹窗 + 房间立即销毁用）。
+   *  自己的座位随退房立即释放不算数，只看其他座位的在线与保留 */
+  wouldBeEmptyAfter(ws: WebSocket): boolean {
+    const me = this.clients.find((c) => c.ws === ws)
+    if (!me) {
+      return false
+    }
+    const humansAfter = this.humans - (me.seat >= 0 ? 1 : 0)
+    const clientsAfter = this.clients.length - 1
+    const now = Date.now()
+    const othersReserve = this.seatAccount.some(
+      (a, i) => !!a && now < this.reserveUntil[i] && this.seatClient[i] !== me,
+    )
+    return humansAfter === 0 && clientsAfter === 0 && !othersReserve
+  }
+
   /** 新连接：注册 / 登录 / 游客取名后进桌；账号玩家先尝试找回座位 */
   join(ws: WebSocket, rawName: string, account: string | null): void {
     const name = account ?? sanitizeName(rawName)

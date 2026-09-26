@@ -198,6 +198,12 @@ interface RoomRec {
   /** 真人聊天文本（tag=chat） */
   chatTexts: string[]
   errCount: number
+  /** 最近一次 err 文案（密码错误判定用） */
+  lastErr: string | null
+  /** 收到过 roomNeedPass（加入加密房未带密码） */
+  needPass: boolean
+  /** 收到过 askLeaveClose（最后一名玩家退房确认） */
+  askedClose: boolean
   /** 退房后仍收到的 state 条数（应为 0：大厅不透传牌桌消息） */
   leftStates: number
   /** 连接被服务器关闭时的 code（顶号 = 4000） */
@@ -216,6 +222,9 @@ function openRoom(port: number, first: Record<string, unknown>, enter?: EnterOpt
       latest: null,
       chatTexts: [],
       errCount: 0,
+      lastErr: null,
+      needPass: false,
+      askedClose: false,
       leftStates: 0,
       closedCode: null,
     }
@@ -245,6 +254,10 @@ function openRoom(port: number, first: Record<string, unknown>, enter?: EnterOpt
         rec.roomJoined = msg
       } else if (msg.t === 'roomLeft') {
         rec.roomLeft = true
+      } else if (msg.t === 'roomNeedPass') {
+        rec.needPass = true
+      } else if (msg.t === 'askLeaveClose') {
+        rec.askedClose = true
       } else if (msg.t === 'rooms') {
         rec.rooms = msg.rooms
       } else if (msg.t === 'welcome') {
@@ -261,6 +274,7 @@ function openRoom(port: number, first: Record<string, unknown>, enter?: EnterOpt
         }
       } else if (msg.t === 'err') {
         rec.errCount++
+        rec.lastErr = msg.msg
       } else if (msg.t === 'say' && msg.tag === 'chat') {
         rec.chatTexts.push(msg.text)
       }
@@ -565,11 +579,15 @@ async function runSelftest(): Promise<void> {
       const inHandSeen = await waitFor(async () => (await pullRooms(r2)).find((x) => x.id === rj.roomId)?.inHand === true, 15000)
       check(inHandSeen, '列表 inHand 标记牌局进行中')
 
-      // ⑥ 空房 GC：创建者退房（游客无保留座）→ 房间回收
+      // ⑥ 最后一人退房：先收到 askLeaveClose 确认，未确认不退房；确认后房间立即销毁
       const otherId = r3.roomJoined!.roomId
       r3.ws.send(JSON.stringify({ t: 'leaveRoom' }))
-      const gone = await waitFor(async () => !(await pullRooms(r2)).some((x) => x.id === otherId), 6000)
-      check(gone, '空房被 GC 回收（列表中消失）')
+      check(await waitFor(() => r3.askedClose, 5000), '最后一人退房先收到 askLeaveClose')
+      check(!r3.roomLeft, '未确认前不退房（房间保留）')
+      r3.ws.send(JSON.stringify({ t: 'leaveRoom', confirm: true }))
+      check(await waitFor(() => r3.roomLeft, 5000), '确认后收到 roomLeft')
+      const goneNow = await waitFor(async () => !(await pullRooms(r2)).some((x) => x.id === otherId), 4000)
+      check(goneNow, '最后一人确认退房后房间立即销毁（列表中消失）')
 
       // ⑦ 保留座续命：账号创建者断线 → 保留期内不回收，过期后回收
       const acc = await openRoom(P, { t: 'register', name: '房东', pass: 'p' }, { create: { name: '保留房', seats: 3, blind: 0 } })
@@ -589,6 +607,38 @@ async function runSelftest(): Promise<void> {
       check(await waitFor(() => jia.closedCode === 4000, 8000), `跨房顶号旧连接收 4000（实际 ${jia.closedCode}）`)
       check(await waitFor(() => jia2.roomJoined?.name === '乙房', 8000), `新连接进新房（实际「${jia2.roomJoined?.name}」）`)
 
+      // ⑨ 房间密码：建锁房直接进 → 列表 locked → 无密码 roomNeedPass → 错密码 err → 对密码进房
+      const locker = await openRoom(P, { t: 'join', name: '锁匠' }, { create: { name: '上锁房', seats: 3, blind: 0, password: '8888' } })
+      check(await waitFor(() => !!locker.roomJoined, 8000), '密码房创建成功（创建者本人免密直进）')
+      const lockId = locker.roomJoined!.roomId
+      list = await pullRooms(r2)
+      const lockItem = list.find((x) => x.id === lockId)
+      check(lockItem?.locked === true, `列表项带 locked 标记（实际 ${lockItem?.locked}）`)
+      const keyGuest = await openRoom(P, { t: 'join', name: '钥匙客' })
+      await sleep(600)
+      keyGuest.ws.send(JSON.stringify({ t: 'joinRoom', roomId: lockId }))
+      check(await waitFor(() => keyGuest.needPass, 5000), '无密码加入锁房收到 roomNeedPass')
+      check(!keyGuest.roomJoined, '未给密码不进房')
+      keyGuest.ws.send(JSON.stringify({ t: 'joinRoom', roomId: lockId, password: '0000' }))
+      await sleep(800)
+      check(!keyGuest.roomJoined && keyGuest.lastErr === '房间密码错误', `错误密码被拒（${keyGuest.lastErr}）`)
+      keyGuest.ws.send(JSON.stringify({ t: 'joinRoom', roomId: lockId, password: '8888' }))
+      check(await waitFor(() => keyGuest.roomJoined?.roomId === lockId, 8000), '正确密码进房成功')
+
+      // ⑩ 锁房断线重连：autoRejoin 有座位即免密回房（有座证明此前进过）
+      const lockAcc = await openRoom(P, { t: 'register', name: '锁主', pass: 'p' }, { create: { name: '账号锁房', seats: 3, blind: 0, password: '123' } })
+      check(await waitFor(() => !!lockAcc.roomJoined, 8000), '账号密码房创建成功')
+      const lockAccId = lockAcc.roomJoined!.roomId
+      lockAcc.ws.close()
+      await sleep(400)
+      list = await pullRooms(r2)
+      check(list.some((x) => x.id === lockAccId), '断线保留期内锁房不回收')
+      const lockAcc2 = await openRoom(P, { t: 'login', name: '锁主', pass: 'p' })
+      check(await waitFor(() => lockAcc2.roomJoined?.roomId === lockAccId, 8000), '断线重连 autoRejoin 免密回锁房')
+
+      locker.ws.close()
+      keyGuest.ws.close()
+      lockAcc2.ws.close()
       r1.ws.close()
       r2.ws.close()
       r4.ws.close()

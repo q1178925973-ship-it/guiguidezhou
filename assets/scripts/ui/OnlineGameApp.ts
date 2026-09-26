@@ -14,8 +14,10 @@ import { buildHeroHint } from './HeroHint'
 import { HistoryPanel } from './HistoryPanel'
 import { loadIconFont } from './IconFont'
 import { AccountDialog, AuthKind } from './AccountDialog'
+import { ConfirmBox } from './ConfirmBox'
 import { CreateRoomDialog } from './CreateRoomDialog'
 import { Lobby } from './Lobby'
+import { PasswordDialog } from './PasswordDialog'
 import { MessageBar } from './MessageBar'
 import { SoundFx } from './SoundFx'
 import { SeatView } from './SeatView'
@@ -141,6 +143,12 @@ export class OnlineGameApp extends Component {
   private accountDialog: AccountDialog | null = null
   /** 打开中的建房弹窗 */
   private createDialog: CreateRoomDialog | null = null
+  /** 打开中的进房密码弹窗（roomNeedPass 时创建；roomJoined 成功或输错时更新） */
+  private passDialog: PasswordDialog | null = null
+  /** 最后一名玩家退房确认弹窗（askLeaveClose 时创建） */
+  private leaveConfirm: ConfirmBox | null = null
+  /** 大厅「退出账号」确认弹窗 */
+  private exitConfirm: ConfirmBox | null = null
 
   // ---------- 多房间双态：lobby ⇄ room ----------
   /** 当前态：大厅（默认）/ 房间 */
@@ -244,7 +252,7 @@ export class OnlineGameApp extends Component {
       onJoinRoom: (id) => this.net.send({ t: 'joinRoom', roomId: id }),
       onCreateRoom: () => this.openCreateRoom(),
       onRefresh: () => this.net.send({ t: 'listRooms' }),
-      onExitAccount: () => this.exitAccount(),
+      onExitAccount: () => this.confirmExitAccount(),
       onSound: () => {
         const muted = this.sfx.toggleMute()
         this.toolbar.setMuted(muted)
@@ -265,6 +273,8 @@ export class OnlineGameApp extends Component {
   private enterRoom(msg: Extract<ServerMsg, { t: 'roomJoined' }>): void {
     this.mode = 'room'
     this.roomInfo = msg
+    this.leaveConfirm?.hide()
+    this.passDialog?.hide()
     if (msg.seats !== this.curLayout.length) {
       this.rebuildSeats(msg.seats)
     }
@@ -279,6 +289,7 @@ export class OnlineGameApp extends Component {
   private enterLobby(): void {
     this.mode = 'lobby'
     this.roomInfo = null
+    this.leaveConfirm?.hide()
     this.resetRoomView(false)
     this.tableRoot.active = false
     this.lobbyRoot.active = true
@@ -347,10 +358,44 @@ export class OnlineGameApp extends Component {
     this.createDialog = new CreateRoomDialog(
       this.node,
       (r) => {
-        this.net.send({ t: 'createRoom', name: r.name, seats: r.seats, blind: r.blind as 0 | 1 | 2 | 3 })
+        this.net.send({ t: 'createRoom', name: r.name, seats: r.seats, blind: r.blind as 0 | 1 | 2 | 3, password: r.password })
       },
       () => {
         this.createDialog = null
+      },
+    )
+  }
+
+  /** 大厅「退出账号」：先确认再登出，防误触 */
+  private confirmExitAccount(): void {
+    if (this.exitConfirm) {
+      return
+    }
+    this.exitConfirm = new ConfirmBox(
+      this.node,
+      '退出登录',
+      '确定要退出当前账号吗？退出后需重新登录。',
+      '退出',
+      () => this.exitAccount(),
+      () => {
+        this.exitConfirm = null
+      },
+    )
+  }
+
+  /** 房内最后一名玩家退房：服务器 askLeaveClose 后弹确认，确认才真退（房间随之销毁） */
+  private showLeaveConfirm(): void {
+    if (this.leaveConfirm) {
+      return
+    }
+    this.leaveConfirm = new ConfirmBox(
+      this.node,
+      '退出房间',
+      '您为当前房间内最后一位玩家，退出后房间自动关闭。',
+      '确认退出',
+      () => this.net.send({ t: 'leaveRoom', confirm: true }),
+      () => {
+        this.leaveConfirm = null
       },
     )
   }
@@ -501,6 +546,33 @@ export class OnlineGameApp extends Component {
       this.enterLobby()
       return
     }
+    if (msg.t === 'roomNeedPass') {
+      // 加密房未带密码：弹密码框，提交后带密码重发 joinRoom
+      if (!this.passDialog) {
+        this.passDialog = new PasswordDialog(
+          this.node,
+          msg.roomId,
+          (pwd) => this.net.send({ t: 'joinRoom', roomId: msg.roomId, password: pwd }),
+          () => {
+            this.passDialog = null
+          },
+        )
+      }
+      return
+    }
+    if (msg.t === 'askLeaveClose') {
+      this.showLeaveConfirm()
+      return
+    }
+    if (msg.t === 'err') {
+      // 密码错误在弹窗内提示，其余 err 保持只打日志（不打断对局）
+      if (this.passDialog) {
+        this.passDialog.showError(msg.msg)
+      } else {
+        console.log('[net] 动作被拒绝:', msg.msg)
+      }
+      return
+    }
     if (this.mode !== 'room') {
       // 大厅态只处理上面的账号 / 房间列表消息，桌内消息全部忽略
       return
@@ -526,9 +598,6 @@ export class OnlineGameApp extends Component {
     if (msg.t === 'history') {
       this.historyPanel?.show(msg.hands)
       return
-    }
-    if (msg.t === 'err') {
-      console.log('[net] 动作被拒绝:', msg.msg)
     }
   }
 

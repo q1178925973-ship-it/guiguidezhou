@@ -14,6 +14,8 @@ export interface Room {
   id: string
   name: string
   table: Table
+  /** 房间密码（'' = 不加密）。创建者本人、断线重连 autoRejoin 不再校验 */
+  password: string
   /** 首次变为可回收（无人无连接无保留座）的时刻；0 = 当前不可回收。空置满一个 GC 周期才删，保证退房后有稳定的重进窗口 */
   emptySince: number
 }
@@ -65,21 +67,32 @@ export class RoomManager {
         this.sendTo(ws, { t: 'rooms', rooms: this.roomInfos(ws) })
         return true
       case 'createRoom':
-        this.createRoom(ws, String(msg.name ?? ''), Number(msg.seats), Number(msg.blind))
+        this.createRoom(ws, String(msg.name ?? ''), Number(msg.seats), Number(msg.blind), String(msg.password ?? ''))
         return true
       case 'joinRoom':
-        this.joinRoom(ws, String(msg.roomId ?? ''))
+        this.joinRoom(ws, String(msg.roomId ?? ''), typeof msg.password === 'string' ? msg.password : undefined)
         return true
       case 'leaveRoom': {
         const room = this.wsRoom.get(ws)
-        if (room) {
-          room.table.depart(ws)
-          this.wsRoom.delete(ws)
-          this.sendTo(ws, { t: 'roomLeft' })
-          this.markDirty()
-        } else {
+        if (!room) {
           this.sendTo(ws, { t: 'err', msg: '当前不在房间里' })
+          return true
         }
+        // 最后一名玩家退房：先问一次（客户端弹确认），confirm 才真退
+        const closeAfter = room.table.wouldBeEmptyAfter(ws)
+        if (closeAfter && msg.confirm !== true) {
+          this.sendTo(ws, { t: 'askLeaveClose', roomId: room.id })
+          return true
+        }
+        room.table.depart(ws)
+        this.wsRoom.delete(ws)
+        this.sendTo(ws, { t: 'roomLeft' })
+        if (closeAfter) {
+          // 房随人走：无人无连接无保留座，立即销毁（GC 只兜底连接异常断开的残留）
+          room.table.dispose()
+          this.rooms.delete(room.id)
+        }
+        this.markDirty()
         return true
       }
       default:
@@ -116,13 +129,14 @@ export class RoomManager {
       smallBlind: r.table.smallBlind,
       bigBlind: r.table.bigBlind,
       inHand: r.table.inHand,
+      locked: r.password !== '',
     }))
   }
 
   // ---------- 内部 ----------
 
-  /** 创建房间并立即入房（创建即加入） */
-  private createRoom(ws: WebSocket, rawName: string, seats: number, blindTier: number): void {
+  /** 创建房间并立即入房（创建即加入；创建者本人不再过密码门） */
+  private createRoom(ws: WebSocket, rawName: string, seats: number, blindTier: number, rawPass: string): void {
     if (this.rooms.size >= MAX_ROOMS) {
       this.sendTo(ws, { t: 'err', msg: '房间太多，稍后再试' })
       return
@@ -138,18 +152,30 @@ export class RoomManager {
     const tierRaw = Math.floor(Number.isFinite(blindTier) ? blindTier : 0)
     const tier = BLIND_TIERS[Math.max(0, Math.min(BLIND_TIERS.length - 1, tierRaw))]
     const name = sanitizeRoomName(rawName) || `${sanitizePlayerName(meta.name)}的房间`
+    const password = String(rawPass ?? '').replace(/\s+/g, '').slice(0, 12)
     const table = new Table(this.store, { seatCount: seats, ...tier }, () => this.markDirty())
-    const room: Room = { id, name, table, emptySince: 0 }
+    const room: Room = { id, name, table, password, emptySince: 0 }
     this.rooms.set(id, room)
-    this.joinRoom(ws, id)
+    this.joinRoom(ws, id, undefined, true)
   }
 
-  /** 加入房间：退旧房 → 跨房顶号 → 进桌 → 回 roomJoined */
-  private joinRoom(ws: WebSocket, roomId: string): void {
+  /** 加入房间：密码门 → 退旧房 → 跨房顶号 → 进桌 → 回 roomJoined */
+  private joinRoom(ws: WebSocket, roomId: string, password?: string, skipPassCheck = false): void {
     const room = this.rooms.get(roomId)
     if (!room) {
       this.sendTo(ws, { t: 'err', msg: '房间不存在或已解散' })
       return
+    }
+    if (!skipPassCheck && room.password) {
+      const given = password ?? ''
+      if (!given) {
+        this.sendTo(ws, { t: 'roomNeedPass', roomId })
+        return
+      }
+      if (given !== room.password) {
+        this.sendTo(ws, { t: 'err', msg: '房间密码错误' })
+        return
+      }
     }
     const cur = this.wsRoom.get(ws)
     if (cur === room) {
@@ -189,7 +215,7 @@ export class RoomManager {
     })
   }
 
-  /** 断线重连：账号在任一房有座位 / 保留座 → 直接回该房 */
+  /** 断线重连：账号在任一房有座位 / 保留座 → 直接回该房（有座位即证明此前进过，不再过密码门） */
   private autoRejoin(ws: WebSocket): boolean {
     const meta = this.wsMeta.get(ws)
     if (!meta?.account) {
@@ -197,14 +223,14 @@ export class RoomManager {
     }
     for (const room of this.rooms.values()) {
       if (room.table.seatOfAccount(meta.account) >= 0) {
-        this.joinRoom(ws, room.id)
+        this.joinRoom(ws, room.id, undefined, true)
         return true
       }
     }
     return false
   }
 
-  /** 该连接视角的房间列表（带 mine：在房 / 有座位保留） */
+  /** 该连接视角的房间列表（带 mine：在房 / 有座位保留；locked：设了密码） */
   private roomInfos(ws: WebSocket): RoomInfo[] {
     const meta = this.wsMeta.get(ws)
     const cur = this.wsRoom.get(ws)
@@ -216,6 +242,7 @@ export class RoomManager {
       smallBlind: r.table.smallBlind,
       bigBlind: r.table.bigBlind,
       inHand: r.table.inHand,
+      locked: r.password !== '',
       mine: cur === r || (meta?.account ? r.table.seatOfAccount(meta.account) >= 0 : false),
     }))
   }

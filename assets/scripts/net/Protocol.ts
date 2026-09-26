@@ -116,6 +116,8 @@ export interface RoomInfo {
   bigBlind: number
   /** 牌局进行中（等待开局 / 两手之间 = false） */
   inHand: boolean
+  /** 设了密码的房间（加入需要密码，列表行显示上锁图标） */
+  locked?: boolean
   /** 我有座位或保留座的房间（服务器逐连接单播时附带） */
   mine?: boolean
 }
@@ -139,12 +141,13 @@ export type ClientMsg =
   // ---- 多房间：登录后先进大厅，以下命令在任意态可发 ----
   /** 拉取公开房间列表（服务器也会在房间增减 / 人数变化时防抖推送） */
   | { t: 'listRooms' }
-  /** 创建并立即加入新房：seats=桌子总人数 3~8；blind=底注档位索引 0~3 */
-  | { t: 'createRoom'; name: string; seats: number; blind: 0 | 1 | 2 | 3 }
-  /** 加入指定房间（满员自动观战；在别的房则先退房） */
-  | { t: 'joinRoom'; roomId: string }
-  /** 主动退出当前房间回大厅（座位立即释放，不留保留座） */
-  | { t: 'leaveRoom' }
+  /** 创建并立即加入新房：seats=桌子总人数 3~8；blind=底注档位索引 0~3；password 留空 = 不设密码 */
+  | { t: 'createRoom'; name: string; seats: number; blind: 0 | 1 | 2 | 3; password?: string }
+  /** 加入指定房间（满员自动观战；在别的房则先退房）；加密房需带 password */
+  | { t: 'joinRoom'; roomId: string; password?: string }
+  /** 主动退出当前房间回大厅（座位立即释放，不留保留座）。
+   *  服务器判定你是房内最后一名玩家时会先回 askLeaveClose 询问，confirm=true 才真退 */
+  | { t: 'leaveRoom'; confirm?: boolean }
 
 /** 服务器发给客户端的消息 */
 export type ServerMsg =
@@ -163,5 +166,9 @@ export type ServerMsg =
   | { t: 'rooms'; rooms: RoomInfo[] }
   /** 进房成功（建房 / joinRoom / 断线重连自动回归都会发） */
   | { t: 'roomJoined'; roomId: string; name: string; seats: number; smallBlind: number; bigBlind: number }
+  /** 加入加密房间但未带密码：客户端弹密码框后带密码重发 joinRoom */
+  | { t: 'roomNeedPass'; roomId: string }
+  /** 你是房内最后一名玩家，退房将关闭房间：客户端弹确认后发 leaveRoom{confirm:true} */
+  | { t: 'askLeaveClose'; roomId: string }
   /** 退房成功，已回大厅 */
   | { t: 'roomLeft' }

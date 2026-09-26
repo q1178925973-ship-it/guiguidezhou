@@ -261,20 +261,23 @@ function isFullscreen(): boolean {
   return !!(document.fullscreenElement || doc.webkitFullscreenElement)
 }
 
-/** 「退出房间」图标：← 箭头 + 开口门框（子集字体没有对应字形，直接 Graphics 画） */
+/** 「退出房间」图标：← 箭头 + 开口门框（子集字体没有对应字形，直接 Graphics 画）。
+ *  必须画在独立子节点上：圆底已给按钮节点挂过一个 Graphics，
+ *  同一节点再 addComponent(Graphics) 的第二个实例不渲染（实测图标丢失） */
 function drawLeaveGlyph(host: Node): void {
-  const g = host.addComponent(Graphics)
-  g.lineWidth = 2.5
+  const n = createNode('gicon', host, 44, 44)
+  const g = n.addComponent(Graphics)
+  g.lineWidth = 2.6
   g.strokeColor = THEME.goldBright
-  g.moveTo(2, 0)
-  g.lineTo(-8, 0)
-  g.moveTo(-4, -4)
-  g.lineTo(-8, 0)
-  g.lineTo(-4, 4)
-  g.moveTo(4, -7)
-  g.lineTo(9, -7)
-  g.lineTo(9, 7)
-  g.lineTo(4, 7)
+  g.moveTo(3, 0)
+  g.lineTo(-7, 0)
+  g.moveTo(-3, -4)
+  g.lineTo(-7, 0)
+  g.lineTo(-3, 4)
+  g.moveTo(5, -8)
+  g.lineTo(11, -8)
+  g.lineTo(11, 8)
+  g.lineTo(5, 8)
   g.stroke()
 }
 
