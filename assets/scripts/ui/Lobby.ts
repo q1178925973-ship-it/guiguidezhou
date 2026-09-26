@@ -36,7 +36,7 @@ const COLS = {
   blind: 18,
   humans: 135,
   state: 215,
-  act: 284, // 加入胶囊右移 15（原 269 会压住状态列文字）
+  act: 294, // 加入胶囊右移 15+10（原 269 压状态列；v26.3 用户要求再 +10）
 };
 const ROW_TOP = 112;
 const ROW_STEP = 52;
@@ -270,8 +270,13 @@ export class Lobby {
 
     const refresh = createNode("btnRefresh", this.contentRooms, 44, 44);
     refresh.setPosition(226, 196);
-    circleBase(refresh, 20);
-    paintIcon(refresh, NAV_PAINTERS.refresh, THEME.goldBright);
+    // v26.3：刷新钮改用效果图雪碧图元素（Graphics.arc 大弧在部分设备被拉成直棒，
+    // 手绘两版都被用户判不合格）；素材缺失时回退手绘
+    attachHomeUi(refresh, "btnRefresh", 44, 44);
+    if (!homeFrame("btnRefresh")) {
+      circleBase(refresh, 20);
+      paintIcon(refresh, NAV_PAINTERS.refresh, THEME.goldBright);
+    }
     refresh.on(Node.EventType.TOUCH_END, () => {
       tween(refresh)
         .to(0.16, { angle: 360 })
