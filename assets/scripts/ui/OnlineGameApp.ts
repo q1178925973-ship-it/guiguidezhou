@@ -155,6 +155,9 @@ export class OnlineGameApp extends Component {
   private mode: 'lobby' | 'room' = 'lobby'
   /** 房间 UI 根（座位 / 公共牌 / 操作条 / 工具条 / 聊天…），大厅态整体隐藏 */
   private tableRoot!: Node
+  /** 座位专用底层：座位节点重建（3~8 人切换）时追加到 tableRoot 末尾，
+   *  会盖住后建的结算横幅 / 胜利特效——固定挂在这里永远垫底 */
+  private seatsRoot!: Node
   /** 大厅 UI 根 */
   private lobbyRoot!: Node
   private lobby!: Lobby
@@ -195,10 +198,12 @@ export class OnlineGameApp extends Component {
     // 双态根：桌子 UI 与大厅 UI 各自成树，切房 / 回大厅整体显隐
     this.tableRoot = createNode('tableRoot', this.node)
     this.lobbyRoot = createNode('lobbyRoot', this.node)
+    // 座位层最先建：公共牌 / 行动条 / 结算横幅 / 特效全部压在座位之上
+    this.seatsRoot = createNode('seatsRoot', this.tableRoot)
     this.seats.length = 0
     SEAT_LAYOUT_8.forEach((s, i) => {
       this.seats.push(
-        new SeatView(this.tableRoot, '', {
+        new SeatView(this.seatsRoot, '', {
           pos: s.pos,
           betOffset: s.bet,
           colorIndex: i,
@@ -338,7 +343,7 @@ export class OnlineGameApp extends Component {
     this.lastBets = new Array(n).fill(0)
     this.curLayout.forEach((s, i) => {
       this.seats.push(
-        new SeatView(this.tableRoot, '', {
+        new SeatView(this.seatsRoot, '', {
           pos: s.pos,
           betOffset: s.bet,
           colorIndex: i,
@@ -623,10 +628,12 @@ export class OnlineGameApp extends Component {
       })
     }
     // 自己的底牌可能晚于开局快照到达（deal-hole 事件在其后）：到货即替换占位牌
+    // （v26.6：占位牌改为背面发出，真实底牌到货后补翻，不再闪现对 2♠）
     const myHole = snap.you.seat >= 0 ? snap.players[snap.you.seat].hole : undefined
     if (myHole && !this.heroDealt) {
       this.heroDealt = true
       this.seats[0].setHoleCards(myHole.map(fromCardJ))
+      this.seats[0].revealCards()
     }
     // 局末摊牌亮牌
     snap.players.forEach((p, seat) => {
@@ -678,7 +685,9 @@ export class OnlineGameApp extends Component {
       if (hole) {
         this.heroDealt = true
       }
-      this.seats[view].dealCards(hole ?? [DUMMY, DUMMY], DECK_POS, 0.1 + view * 0.12)
+      // faceUp 只在真拿到自己的底牌时开：观战（you.seat=-1）时 view0 坐的是别的玩家，
+      // 占位牌 2♠ 若跟着座位默认翻面，整局都会显示成「对 2」（v26.6 修复）
+      this.seats[view].dealCards(hole ?? [DUMMY, DUMMY], DECK_POS, 0.1 + view * 0.12, !!hole)
     })
     this.sfx.deal()
     this.lastBets = snap.players.map((p) => p.betRound)
@@ -773,6 +782,9 @@ export class OnlineGameApp extends Component {
     this.voteText.color = refused ? shade(THEME.fold, 1.4) : THEME.textBright
     if (!this.votePanel.active) {
       this.votePanel.active = true
+      // 置顶（v26.6）：行动倒计时胶囊常停在顶部座位上方，与面板同带重叠；
+      // 弹窗类必须压住计时器而不是被计时器压住
+      this.votePanel.setSiblingIndex(this.node.children.length - 1)
       this.votePanel.setScale(0.9, 0.9, 1)
       Tween.stopAllByTarget(this.voteOpacity)
       Tween.stopAllByTarget(this.votePanel)

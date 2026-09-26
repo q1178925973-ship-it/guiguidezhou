@@ -77,7 +77,7 @@ export class SeatView {
   }
 
   /** 发两张底牌（from 为牌堆在根节点下的位置），牌直接落进横幅图内的两个牌槽 */
-  dealCards(cards: Card[], from: Vec3, baseDelay = 0): void {
+  dealCards(cards: Card[], from: Vec3, baseDelay = 0, faceUp = this.opts.faceUp): void {
     const localFrom = from.clone().subtract(this.node.position)
     const cw = Math.round(this.plate.slotW) - 1
     const ch = Math.round(this.plate.slotH) - 1
@@ -89,7 +89,7 @@ export class SeatView {
       this.cardViews.push(view)
       const delay = baseDelay + i * 0.18
       view.dealFrom(localFrom, delay)
-      if (this.opts.faceUp) {
+      if (faceUp) {
         view.flip(delay + 0.32)
       }
     })

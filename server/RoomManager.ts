@@ -199,8 +199,11 @@ export class RoomManager {
       }
     }
     this.wsRoom.set(ws, room)
-    room.table.join(ws, meta?.name ?? '', meta?.account ?? null)
+    // 先回 roomJoined 再 table.join：join 内部会 broadcastState，若抢在回执前到达，
+    // 客户端还处在大厅态会把首包 state 丢掉——牌局挂起（等某人行动）时再无后续
+    // state 补发，进房者整局只能看到空桌（v26.6 修复）
     this.replyJoined(ws, room)
+    room.table.join(ws, meta?.name ?? '', meta?.account ?? null)
     this.markDirty()
   }
 

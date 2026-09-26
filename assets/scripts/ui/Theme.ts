@@ -126,10 +126,9 @@ export function drawLockGlyph(g: Graphics, s = 1, open = false): void {
   g.fill()
   g.lineWidth = 2.6 * s
   if (open) {
-    // 开锁：锁梁 anchored 左腿 + 甩向右上（135° 弧，避开 >180° 的 Graphics.arc 渲染 bug）
-    g.arc(0, 3 * s, 5 * s, Math.PI, Math.PI / 4, false)
-    g.moveTo(3.54 * s, 6.54 * s)
-    g.lineTo(5.2 * s, 3.2 * s)
+    // 开锁（Lucide lock-open 造型）：锁梁只锚左腿，越过顶部后末端停在接近水平处、
+    // 右侧不再落回锁体——v26.5 版末端画了条回落的短腿，26px 下看着像闭锁
+    g.arc(0, 3.5 * s, 5.6 * s, Math.PI, 0.32, false)
     g.stroke()
   } else {
     g.arc(0, 3 * s, 5 * s, Math.PI, 0, false)

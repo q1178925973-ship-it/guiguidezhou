@@ -11,6 +11,16 @@
 
 ## 更新日志
 
+### 2026-09-26 观战对2修复 + 结算/弹窗置顶 + 开锁图形重画（v26.6）
+
+- **观战不再是「对 2」（bug 修复）**：中途加入观战（you.seat=-1）时英雄位坐的是别的玩家，但 `startHandView` 发占位牌 `DUMMY=2♠` 时跟着座位默认 `faceUp` 翻面，观战者整局看着两张亮着的 2♠。修复：`dealCards` 增加显式 `faceUp` 参数，只在真拿到自己底牌（`!!hole`）时翻；真实底牌迟到时由 `applySnapshot` 补 `setHoleCards + revealCards`。E2E 场景图仲裁：观战者 12 张座位牌全背面、3 张公共牌全正面
+- **挂起牌局进房即见桌面（服务端修复）**：`RoomManager.joinRoom` 原先先 `table.join()`（内部 `broadcastState`）再回 `roomJoined`——首包 state 抢在回执前到达，客户端还处在大厅态直接丢弃；牌局挂起（等某人 60s 行动）时不会再补发 state，进房者整局空桌。修复：先 `replyJoined` 再 `table.join`。selftest 71/71；E2E：A 翻牌后挂起不行动，B 进房首包 `community=3, pot=960`，公共牌白面像素 6087 ✓
+- **结算横幅/胜利特效不再被头像盖住**：座位随人数变化会整组重建，重建节点追加到父节点末尾 → 座位层跑到 MessageBar/winFx 之上。修复：`tableRoot` 下专设 `seatsRoot` 垫底首子，两次 SeatView 构建都挂它，重建不再影响层级（E2E 实测子序 `seatsRoot → community → … → winFx`）
+- **重置本局确认弹窗压过倒计时胶囊**：激活投票面板时 `setSiblingIndex` 拉到 `this.node` 末位置顶
+- **开锁图标重画**：v26.5 的 135° 弧末端带一条回落短腿，26px 下看着仍像闭锁——去掉回腿，锁梁左锚、越过顶部后末端停在右上悬空（Lucide lock-open 造型，160° 弧避 >180° 渲染 bug）。实测闭锁 181px@r241 亮金双腿 vs 开锁 28~60px@r154 暗金无右腿
+- 弃牌玩家的底牌在当局保持背面是扑克 muck 规则（弃牌即盖牌），局末摊牌才随 revealAll 亮出——观战时看不到弃牌点数属预期行为
+- 测试：`smoke-lobby.mjs` 17/17 PASS；`dbg-midjoin.mjs` 三断言全绿（协议同步 / 场景图翻面 / z-order）；`server selftest` 71/71
+
 ### 2026-09-26 房间列表列重排 + 无密码房开锁图标（v26.5）
 
 - **列重排（用户反馈：房号前空白过大）**：原先房间号距行首 110px（给挂锁预留），五列内容间距不均。现改为锁图标(−312)右侧紧贴房号，五列以 120 步长均分至加入胶囊左缘：`COLS = {id:−262, name:−142, blind:−21, humans:100, state:220, act:304}`；实测表头质心 453/573/694/814/934，列间距 120/121/120/120
