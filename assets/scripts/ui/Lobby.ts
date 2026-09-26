@@ -29,13 +29,14 @@ export interface LobbyHandlers {
   onFullscreen: () => void;
 }
 
-/** 表格六列的列心横坐标（行宽 690；左端 -345 起 33px 处留给锁图标） */
+/** 表格六列的列心横坐标（行宽 690）。v26.5：左端锁图标(−312)后紧贴房间号，
+ *  五列内容以 120 步长均分至加入胶囊左缘(252)，原先房号前 110px 空当摊进列间距 */
 const COLS = {
-  id: -235,
-  name: -105,
-  blind: 18,
-  humans: 135,
-  state: 215,
+  id: -262,
+  name: -142,
+  blind: -21,
+  humans: 100,
+  state: 220,
   act: 304, // 加入胶囊右移 15+10（原 269 压状态列；v26.3 用户要求再 +10）
 };
 const ROW_TOP = 112;
@@ -105,7 +106,13 @@ const NAV_PAINTERS: Record<string, (g: Graphics) => void> = {
 
 /** 手绘面板：与左导航同族配色（墨绿底 #10261C + 金边 + 内侧白高光 + 下部渐暗）。
  *  用户要求中央房间列表区的背景 / 搜索框 / 刷新钮不再用雪碧图元素 */
-function drawNavPanel(g: Graphics, w: number, h: number, r: number, fillAlpha = 205): void {
+function drawNavPanel(
+  g: Graphics,
+  w: number,
+  h: number,
+  r: number,
+  fillAlpha = 205,
+): void {
   g.clear();
   g.fillColor = new Color(16, 38, 28, fillAlpha);
   g.roundRect(-w / 2, -h / 2, w, h, r);
@@ -244,7 +251,7 @@ export class Lobby {
 
     // 搜索 + 刷新 + 计数（手绘：墨绿玻璃感搜索框 + 左端放大镜 + 金圈刷新圆钮）
     const searchHost = createNode("searchBox", this.contentRooms, 300, 44);
-    searchHost.setPosition(74, 196);
+    searchHost.setPosition(140, 196);
     drawNavPanel(searchHost.addComponent(Graphics), 300, 44, 12, 190);
     paintIcon(searchHost, NAV_PAINTERS.search, THEME.goldBright, -126, 0);
     const editNode = createNode("edit", searchHost, 240, 40);
@@ -269,7 +276,7 @@ export class Lobby {
     editNode.on("editing-did-ended", () => this.refreshRows());
 
     const refresh = createNode("btnRefresh", this.contentRooms, 44, 44);
-    refresh.setPosition(266, 196);
+    refresh.setPosition(320, 196);
     // v26.3：刷新钮改用效果图雪碧图元素（Graphics.arc 大弧在部分设备被拉成直棒，
     // 手绘两版都被用户判不合格）；素材缺失时回退手绘
     attachHomeUi(refresh, "btnRefresh", 44, 44);
@@ -749,6 +756,7 @@ class RowView {
   private readonly humansL: ReturnType<typeof createLabel>;
   private readonly stateL: ReturnType<typeof createLabel>;
   private readonly lockNode: Node;
+  private readonly openNode: Node;
   private readonly joinG: Graphics;
   private readonly joinLabel: ReturnType<typeof createLabel>;
   private roomId = "";
@@ -764,14 +772,23 @@ class RowView {
     g.strokeColor = new Color(255, 255, 255, 26);
     g.roundRect(-345, -25, 690, 50, 14);
     g.stroke();
-    // 挂锁图标：密码房才显示（金色剪影）
+    // 挂锁图标：密码房=亮金闭锁 / 无密码=降透明开锁（v26.5：空着曾被误以为排版漏洞）
     this.lockNode = createNode("lockIcon", this.node, 26, 26);
     this.lockNode.setPosition(-312, 0);
     const lg = this.lockNode.addComponent(Graphics);
     lg.fillColor = THEME.goldBright;
     lg.strokeColor = THEME.goldBright;
     drawLockGlyph(lg);
+    this.openNode = createNode("openIcon", this.node, 26, 26);
+    this.openNode.setPosition(-312, 0);
+    const og = this.openNode.addComponent(Graphics);
+    const dimGold = new Color(THEME.goldBright);
+    dimGold.a = 150;
+    og.fillColor = dimGold;
+    og.strokeColor = dimGold;
+    drawLockGlyph(og, 1, true);
     this.lockNode.active = false;
+    this.openNode.active = false;
     // 房间号用亮白粗体：旧版 textDim 灰字压在深绿底上对比不足
     this.idL = createLabel(this.node, "", 15, THEME.textBright, true);
     this.idL.node.setPosition(COLS.id, 0);
@@ -815,6 +832,7 @@ class RowView {
         ? shade(THEME.call, 1.5)
         : THEME.textBright;
     this.lockNode.active = !!r.locked;
+    this.openNode.active = !r.locked;
     this.joinG.clear();
     this.joinG.fillColor = full ? new Color(70, 78, 92, 190) : THEME.gold;
     this.joinG.roundRect(-52, -18, 104, 36, 18);

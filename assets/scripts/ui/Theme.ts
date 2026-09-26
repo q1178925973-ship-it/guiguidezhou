@@ -121,12 +121,20 @@ export function drawRoundRect(g: Graphics, w: number, h: number, r: number, fill
 
 /** 挂锁剪影（Graphics 图标，替代 IconFont 字形——字体子集冻结不能加字）：
  *  锁体圆角方 + 上拱锁梁。fill / stroke 色由调用方预先设置，s 为缩放 */
-export function drawLockGlyph(g: Graphics, s = 1): void {
+export function drawLockGlyph(g: Graphics, s = 1, open = false): void {
   g.roundRect(-7.5 * s, -9 * s, 15 * s, 12 * s, 3 * s)
   g.fill()
   g.lineWidth = 2.6 * s
-  g.arc(0, 3 * s, 5 * s, Math.PI, 0, false)
-  g.stroke()
+  if (open) {
+    // 开锁：锁梁 anchored 左腿 + 甩向右上（135° 弧，避开 >180° 的 Graphics.arc 渲染 bug）
+    g.arc(0, 3 * s, 5 * s, Math.PI, Math.PI / 4, false)
+    g.moveTo(3.54 * s, 6.54 * s)
+    g.lineTo(5.2 * s, 3.2 * s)
+    g.stroke()
+  } else {
+    g.arc(0, 3 * s, 5 * s, Math.PI, 0, false)
+    g.stroke()
+  }
 }
 
 export interface SimpleButton {
