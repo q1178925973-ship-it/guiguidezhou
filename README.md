@@ -1,106 +1,231 @@
-
-龟龟德州
-
-# 德州扑克小游戏（Cocos Creator 3.8 + TypeScript）
+# 龟龟德州 —— 德州扑克小游戏（Cocos Creator 3.8 + TypeScript）
 
 一个用于学习 Cocos Creator 的德州扑克（Texas Hold'em）小游戏：
 单机模式对战 3 个 AI，联机模式和朋友同桌（空位 AI 补齐、满员观战），
 完整体验「盲注 → 翻牌前 → 翻牌 → 转牌 → 河牌 → 摊牌」流程。
 
-**UI 全部由代码创建（Graphics + Label）；美术使用三张图：牌面雪碧图 `cards.png`、牌背 `card-back.png`、桌面整景 `table.png`（均在 `assets/resources/`，缺失时自动回退代码绘制）。**
+**UI 全部由代码创建（Graphics + Label）；美术使用三张图：牌面雪碧图
+`cards.png`、牌背 `card-back.png`、桌面整景 `table.png`（均在
+`assets/resources/`，缺失时自动回退代码绘制）。**
 
 ## 更新日志
 
 ### 2026-09-28 游客登录顶栏残留上个账号名修复（v26.8）
 
-- **三处叠加的根因**：① 服务端游客 `join` 从不回 `auth-ok`，而客户端顶栏名字只在 auth-ok 时更新——「账号退出 → 游客进入」没有任何消息来改顶栏；② 账号退出后登录弹窗预填上次账号名，而游客按钮把输入框内容原样带上——游客直接顶着上个账号名入场（服务端视角也是这个名字）；③ 退出账号后顶栏不重置，在下一次 auth-ok 前一直显示旧名+旧战绩
-- **修法**：服务端游客 join 回 `auth-ok`（token 空、名字走 `sanitizeName` 与桌面座位同源，已部署旧客户端也直接受益）；AccountDialog 游客不再吃输入框内容（名字框只属于账号路径，游客名随机 玩家XXXX）；客户端 auth-ok 对空 token 不落本地、不用游客名覆盖弹窗预填的账号名；退出账号立即把顶栏/战绩页重置回「游客 / 登录后保存战绩」（新增 `Lobby.resetAccount`）
-- selftest 游客替身的入房时机统一挪到 auth-ok（原先游客在 open 时抢先 enterRoom，服务端补 ack 后会双发建房/加房）；新增断言「游客也回 auth-ok」→ **72/72**
-- E2E（dbg-guestname）：注册 → 顶栏=账号名 ✓ → 退出 → 顶栏立即回「游客」占位 ✓ → 游客进入 → auth-ok 带随机名+空 token ✓ → 顶栏=玩家1229、账号名消失 ✓；smoke-lobby 17/17
+- **三处叠加的根因**：① 服务端游客 `join` 从不回 `auth-ok`，而客户端
+  顶栏名字只在 auth-ok 时更新——「账号退出 → 游客进入」没有任何消息
+  来改顶栏；② 账号退出后登录弹窗预填上次账号名，而游客按钮把输入框
+  内容原样带上——游客直接顶着上个账号名入场（服务端视角也是这个
+  名字）；③ 退出账号后顶栏不重置，在下一次 auth-ok 前一直显示旧名+
+  旧战绩
+- **修法**：服务端游客 join 回 `auth-ok`（token 空、名字走
+  `sanitizeName` 与桌面座位同源，已部署旧客户端也直接受益）；
+  AccountDialog 游客不再吃输入框内容（名字框只属于账号路径，游客名
+  随机 玩家XXXX）；客户端 auth-ok 对空 token 不落本地、不用游客名
+  覆盖弹窗预填的账号名；退出账号立即把顶栏/战绩页重置回「游客 /
+  登录后保存战绩」（新增 `Lobby.resetAccount`）
+- selftest 游客替身的入房时机统一挪到 auth-ok（原先游客在 open 时
+  抢先 enterRoom，服务端补 ack 后会双发建房/加房）；新增断言「游客
+  也回 auth-ok」→ **72/72**
+- E2E（dbg-guestname）：注册 → 顶栏=账号名 ✓ → 退出 → 顶栏立即回
+  「游客」占位 ✓ → 游客进入 → auth-ok 带随机名+空 token ✓ →
+  顶栏=玩家1229、账号名消失 ✓；smoke-lobby 17/17
 
 ### 2026-09-27 观战透视全场亮牌 + 下注筹码遮挡修复 + 残缺首帧广播根治（v26.7）
 
-- **观战透视（用户拍板）**：观战者（seat=-1）全场底牌直接亮面、含已弃牌玩家（要看弃牌点数）。服务端 `snapshotFor` 给观战者下发全场 `hole` 与 `revealed`；客户端发牌走新链 `CardView.dealAndFlip`（飞入落位后同条 tween 紧接翻面，一张牌一条链无并发竞争），另留 2s 补扫保险丝。**在座玩家视角不变**：他人底牌仍只见牌背，自己的牌只发给自己
-- **下注筹码压手牌修复（6/5/3 人桌）**：椭圆拟合布局的下注点原是「指向桌心 × 模长 70」，右侧座位正对自家牌槽必压牌。v26.7 两段规则：右半侧沿同方向走到桌心 55% 处（与 8 人实测表右中位 -276 落点同带）；左/顶侧按「主轴清障」外推——近水平座位水平行程 ≥88（牌对横排 ±51 + 药丸半宽 28 + 裕量）、近竖直 ≥66，否则补足。E2E 场景图 bbox 仲裁：6 人桌 12 牌 × 3 注零相交（修前左上位压牌 11px、右侧整组遮挡）
-- **残缺首帧广播根治（v26.7 回归的根因）**：`GameEngine.startHand` 发底牌前先 emit `hand-start`/`blinds`，而 `Table.onEngineEvent` 对所有事件无条件 `broadcastState`——客户端会收到 handNo 已 +1 但全场 holeCount=0 的残缺帧 ×2，随后的完整帧 handNo 不变不再触发重发布局。旧版客户端无条件发牌背掩盖了它；v26.7 的 `holeCount>0` 门让 bot 座位牌永远空着。修法双保险：服务端掐掉这两帧（完整首帧由 `deal-hole` 与 `beginHand` 末尾同 tick 推送，客户端无感知）；客户端加保险丝——同一手「全场 0 牌 → 有牌」过渡即补跑一次 `startHandView`
-- **BGM 回归修复**：两处导致「听不到歌」——① `Bgm.resolveUrl` 把 localhost/127.0.0.1 整个排除（早期本地无音频文件的防 404 措施，本地 server/web/audio 早已有文件）；② 桌面浏览器鼠标点击**不产生**全局 `Input.TOUCH_END`（手机真触摸才有；UI 按钮的节点级触摸另有一套模拟所以按钮正常），首次手势回调永不触发。修法：resolveUrl 全环境生效（缺文件时 loadRemote 静默跳过），手势回调 TOUCH_END + MOUSE_UP 双挂（userGesture 幂等）。E2E：桌面点击「游客进入」即见 `/audio/bgm.mp3` 网络请求
-- 验证：自检 71/71（新增观战透视断言：8 家在局底牌全场可见）；dbg-midjoin 观战 12/12 亮面 + 公共牌 3/3；dbg-betpos 零遮挡；smoke-lobby 17/17
-- 教训：VSCode 终端继承 `ELECTRON_RUN_AS_NODE=1` 会让 CocosCreator.exe 以纯 Node 跑（--project 报错 exit 9/36），构建须 `env -u ELECTRON_RUN_AS_NODE` 前缀；构建退出码 36 但日志含 "build Task Finished" 属良性，以 bundle 内容标记（grep dealAndFlip/holeCount）与 mtime 为准
+- **观战透视（用户拍板）**：观战者（seat=-1）全场底牌直接亮面、含已
+  弃牌玩家（要看弃牌点数）。服务端 `snapshotFor` 给观战者下发全场
+  `hole` 与 `revealed`；客户端发牌走新链 `CardView.dealAndFlip`
+  （飞入落位后同条 tween 紧接翻面，一张牌一条链无并发竞争），另留
+  2s 补扫保险丝。**在座玩家视角不变**：他人底牌仍只见牌背，自己的
+  牌只发给自己
+- **下注筹码压手牌修复（6/5/3 人桌）**：椭圆拟合布局的下注点原是
+  「指向桌心 × 模长 70」，右侧座位正对自家牌槽必压牌。v26.7 两段
+  规则：右半侧沿同方向走到桌心 55% 处（与 8 人实测表右中位 -276
+  落点同带）；左/顶侧按「主轴清障」外推——近水平座位水平行程 ≥88
+  （牌对横排 ±51 + 药丸半宽 28 + 裕量）、近竖直 ≥66，否则补足。
+  E2E 场景图 bbox 仲裁：6 人桌 12 牌 × 3 注零相交（修前左上位压牌
+  11px、右侧整组遮挡）
+- **残缺首帧广播根治（v26.7 回归的根因）**：`GameEngine.startHand`
+  发底牌前先 emit `hand-start`/`blinds`，而 `Table.onEngineEvent`
+  对所有事件无条件 `broadcastState`——客户端会收到 handNo 已 +1 但
+  全场 holeCount=0 的残缺帧 ×2，随后的完整帧 handNo 不变不再触发
+  重发布局。旧版客户端无条件发牌背掩盖了它；v26.7 的 `holeCount>0`
+  门让 bot 座位牌永远空着。修法双保险：服务端掐掉这两帧（完整首帧
+  由 `deal-hole` 与 `beginHand` 末尾同 tick 推送，客户端无感知）；
+  客户端加保险丝——同一手「全场 0 牌 → 有牌」过渡即补跑一次
+  `startHandView`
+- **BGM 回归修复**：两处导致「听不到歌」——① `Bgm.resolveUrl` 把
+  localhost/127.0.0.1 整个排除（早期本地无音频文件的防 404 措施，
+  本地 server/web/audio 早已有文件）；② 桌面浏览器鼠标点击**不产生**
+  全局 `Input.TOUCH_END`（手机真触摸才有；UI 按钮的节点级触摸另有
+  一套模拟所以按钮正常），首次手势回调永不触发。修法：resolveUrl
+  全环境生效（缺文件时 loadRemote 静默跳过），手势回调 TOUCH_END +
+  MOUSE_UP 双挂（userGesture 幂等）。E2E：桌面点击「游客进入」即见
+  `/audio/bgm.mp3` 网络请求
+- 验证：自检 71/71（新增观战透视断言：8 家在局底牌全场可见）；
+  dbg-midjoin 观战 12/12 亮面 + 公共牌 3/3；dbg-betpos 零遮挡；
+  smoke-lobby 17/17
+- 教训：VSCode 终端继承 `ELECTRON_RUN_AS_NODE=1` 会让 CocosCreator.exe
+  以纯 Node 跑（--project 报错 exit 9/36），构建须
+  `env -u ELECTRON_RUN_AS_NODE` 前缀；构建退出码 36 但日志含
+  "build Task Finished" 属良性，以 bundle 内容标记（grep
+  dealAndFlip/holeCount）与 mtime 为准
 
 ### 2026-09-26 观战对2修复 + 结算/弹窗置顶 + 开锁图形重画（v26.6）
 
-- **观战不再是「对 2」（bug 修复）**：中途加入观战（you.seat=-1）时英雄位坐的是别的玩家，但 `startHandView` 发占位牌 `DUMMY=2♠` 时跟着座位默认 `faceUp` 翻面，观战者整局看着两张亮着的 2♠。修复：`dealCards` 增加显式 `faceUp` 参数，只在真拿到自己底牌（`!!hole`）时翻；真实底牌迟到时由 `applySnapshot` 补 `setHoleCards + revealCards`。E2E 场景图仲裁：观战者 12 张座位牌全背面、3 张公共牌全正面
-- **挂起牌局进房即见桌面（服务端修复）**：`RoomManager.joinRoom` 原先先 `table.join()`（内部 `broadcastState`）再回 `roomJoined`——首包 state 抢在回执前到达，客户端还处在大厅态直接丢弃；牌局挂起（等某人 60s 行动）时不会再补发 state，进房者整局空桌。修复：先 `replyJoined` 再 `table.join`。selftest 71/71；E2E：A 翻牌后挂起不行动，B 进房首包 `community=3, pot=960`，公共牌白面像素 6087 ✓
-- **结算横幅/胜利特效不再被头像盖住**：座位随人数变化会整组重建，重建节点追加到父节点末尾 → 座位层跑到 MessageBar/winFx 之上。修复：`tableRoot` 下专设 `seatsRoot` 垫底首子，两次 SeatView 构建都挂它，重建不再影响层级（E2E 实测子序 `seatsRoot → community → … → winFx`）
+- **观战不再是「对 2」（bug 修复）**：中途加入观战（you.seat=-1）时
+  英雄位坐的是别的玩家，但 `startHandView` 发占位牌 `DUMMY=2♠` 时
+  跟着座位默认 `faceUp` 翻面，观战者整局看着两张亮着的 2♠。修复：
+  `dealCards` 增加显式 `faceUp` 参数，只在真拿到自己底牌
+  （`!!hole`）时翻；真实底牌迟到时由 `applySnapshot` 补
+  `setHoleCards + revealCards`。E2E 场景图仲裁：观战者 12 张座位牌
+  全背面、3 张公共牌全正面
+- **挂起牌局进房即见桌面（服务端修复）**：`RoomManager.joinRoom`
+  原先先 `table.join()`（内部 `broadcastState`）再回 `roomJoined`——
+  首包 state 抢在回执前到达，客户端还处在大厅态直接丢弃；牌局挂起
+  （等某人 60s 行动）时不会再补发 state，进房者整局空桌。修复：先
+  `replyJoined` 再 `table.join`。selftest 71/71；E2E：A 翻牌后挂起
+  不行动，B 进房首包 `community=3, pot=960`，公共牌白面像素 6087 ✓
+- **结算横幅/胜利特效不再被头像盖住**：座位随人数变化会整组重建，
+  重建节点追加到父节点末尾 → 座位层跑到 MessageBar/winFx 之上。
+  修复：`tableRoot` 下专设 `seatsRoot` 垫底首子，两次 SeatView 构建
+  都挂它，重建不再影响层级（E2E 实测子序
+  `seatsRoot → community → … → winFx`）
 - **重置本局确认弹窗压过倒计时胶囊**：激活投票面板时 `setSiblingIndex` 拉到 `this.node` 末位置顶
-- **开锁图标重画**：v26.5 的 135° 弧末端带一条回落短腿，26px 下看着仍像闭锁——去掉回腿，锁梁左锚、越过顶部后末端停在右上悬空（Lucide lock-open 造型，160° 弧避 >180° 渲染 bug）。实测闭锁 181px@r241 亮金双腿 vs 开锁 28~60px@r154 暗金无右腿
+- **开锁图标重画**：v26.5 的 135° 弧末端带一条回落短腿，26px 下看着
+  仍像闭锁——去掉回腿，锁梁左锚、越过顶部后末端停在右上悬空
+  （Lucide lock-open 造型，160° 弧避 >180° 渲染 bug）。实测闭锁
+  181px@r241 亮金双腿 vs 开锁 28~60px@r154 暗金无右腿
 - 弃牌玩家的底牌在当局保持背面是扑克 muck 规则（弃牌即盖牌），局末摊牌才随 revealAll 亮出——观战时看不到弃牌点数属预期行为
-- 测试：`smoke-lobby.mjs` 17/17 PASS；`dbg-midjoin.mjs` 三断言全绿（协议同步 / 场景图翻面 / z-order）；`server selftest` 71/71
+- 测试：`smoke-lobby.mjs` 17/17 PASS；`dbg-midjoin.mjs` 三断言全绿
+  （协议同步 / 场景图翻面 / z-order）；`server selftest` 71/71
 
 ### 2026-09-26 房间列表列重排 + 无密码房开锁图标（v26.5）
 
-- **列重排（用户反馈：房号前空白过大）**：原先房间号距行首 110px（给挂锁预留），五列内容间距不均。现改为锁图标(−312)右侧紧贴房号，五列以 120 步长均分至加入胶囊左缘：`COLS = {id:−262, name:−142, blind:−21, humans:100, state:220, act:304}`；实测表头质心 453/573/694/814/934，列间距 120/121/120/120
-- **无密码房显示开锁图标**（用户：空位曾被误以为排版漏洞）——`drawLockGlyph` 加 `open` 参数：锁梁 135° 弧甩向右上（避开 >180° 的 Graphics.arc 渲染 bug）；密码房=亮金闭锁（181px@241），无密码=alpha150 暗金开锁（175px@153），每行必有一枚不再空位
+- **列重排（用户反馈：房号前空白过大）**：原先房间号距行首 110px
+  （给挂锁预留），五列内容间距不均。现改为锁图标(−312)右侧紧贴
+  房号，五列以 120 步长均分至加入胶囊左缘：
+  `COLS = {id:−262, name:−142, blind:−21, humans:100, state:220,
+  act:304}`；实测表头质心 453/573/694/814/934，列间距 120/121/120/120
+- **无密码房显示开锁图标**（用户：空位曾被误以为排版漏洞）——
+  `drawLockGlyph` 加 `open` 参数：锁梁 135° 弧甩向右上（避开 >180°
+  的 Graphics.arc 渲染 bug）；密码房=亮金闭锁（181px@241），无密码
+  =alpha150 暗金开锁（175px@153），每行必有一枚不再空位
 - 测试：`smoke-lobby.mjs` 17/17 PASS；双房种子的行图标探针四轮一致
-- 探针教训：alpha150 暗金混深绿底 ≈ rgb(153,133,75)，判据 `r>g+20` 正好压线会随机漏检——暗色图标要用 `r>g+10` 且阈值 r>100
+- 探针教训：alpha150 暗金混深绿底 ≈ rgb(153,133,75)，判据 `r>g+20`
+  正好压线会随机漏检——暗色图标要用 `r>g+10` 且阈值 r>100
 
 ### 2026-09-26 搜索/刷新右移 + 中局加入实时进度（v26.4）
 
-- **中局加入/断线重连即见牌面（bug 修复）**：牌局进行中加入的玩家（及断线重连的玩家）此前只能看到空桌，须等下一张公共牌翻开才有内容——`applySnapshot` 的增量分支只在「比上一包多」时发牌，而首包没有 `prev` 可比。修复：`startHandView`（首包路径）直接把快照里已翻的公共牌补上桌（`snap.community.forEach(dealCard)`），底池/阶段/行动位本就随每包 state 推送，无需改服务端。E2E：A 建房秒弃后 B 于转牌圈加入，首包 `community=4, pot=570, you.waiting=true`，屏幕公共牌白面像素 5553 ✓
+- **中局加入/断线重连即见牌面（bug 修复）**：牌局进行中加入的玩家
+  （及断线重连的玩家）此前只能看到空桌，须等下一张公共牌翻开才有
+  内容——`applySnapshot` 的增量分支只在「比上一包多」时发牌，而
+  首包没有 `prev` 可比。修复：`startHandView`（首包路径）直接把
+  快照里已翻的公共牌补上桌（`snap.community.forEach(dealCard)`），
+  底池/阶段/行动位本就随每包 state 推送，无需改服务端。E2E：A 建房
+  秒弃后 B 于转牌圈加入，首包 `community=4, pot=570, you.waiting=
+  true`，屏幕公共牌白面像素 5553 ✓
 - **搜索框/刷新钮 X+40**：搜索条 x34 → 74（屏 638..938）、刷新钮 x226 → 266（icon 质心 979 ≈ 期望 980），给左侧标题留出呼吸位
 - 测试：`smoke-lobby.mjs` 17/17 PASS；中局加入 E2E（`dbg-midjoin.mjs`）协议同步 + 像素渲染双绿
-- 冒烟脚本踩坑记录：WebSocket 钩子替换必须拷贝 `OPEN/CONNECTING/CLOSING/CLOSED` 静态常量——NetClient 用 `WebSocket.OPEN` 判连接态，漏拷则 auth 永远发不出（症状：钩子在、0 消息、pageerror reading 'send'）
+- 冒烟脚本踩坑记录：WebSocket 钩子替换必须拷贝
+  `OPEN/CONNECTING/CLOSING/CLOSED` 静态常量——NetClient 用
+  `WebSocket.OPEN` 判连接态，漏拷则 auth 永远发不出（症状：钩子在、
+  0 消息、pageerror reading 'send'）
 
 ### 2026-09-26 刷新钮换素材 + 加入钮再右移（v26.3）
 
-- **刷新图标根治**：手绘 `Graphics.arc` 大弧段在部分渲染路径下被拉成直棒/碎块（本地与用户设备同样异常，放大线宽也救不回）→ 刷新钮直接用效果图雪碧图元素 `btnRefresh`（85×86 金环+环形箭头，缩放到 44×44），素材缺失时才回退手绘；实测渲染金像素 227 ≈ 素材期望值 226，形状与效果图一致
+- **刷新图标根治**：手绘 `Graphics.arc` 大弧段在部分渲染路径下被拉成
+  直棒/碎块（本地与用户设备同样异常，放大线宽也救不回）→ 刷新钮
+  直接用效果图雪碧图元素 `btnRefresh`（85×86 金环+环形箭头，缩放到
+  44×44），素材缺失时才回退手绘；实测渲染金像素 227 ≈ 素材期望值
+  226，形状与效果图一致
 - **加入胶囊再 +10**：`COLS.act` 284 → 294（胶囊左缘 956，与状态列净空 11px）
 - 测试：`smoke-lobby.mjs` 17/17 PASS
 
 ### 2026-09-26 房间列表 4 处修正（v26.2，用户设备截图反馈）
 
-- **列表不再盖表头**：表头 y124 → 154 落到搜索框下方净空区，第一行 ROW_TOP 110 → 112，实测表头金字带 y185..207 与行 1 文字 y227..239 完全分离（原先行 1 胶囊顶 209 直接压住表头 214..228）
+- **列表不再盖表头**：表头 y124 → 154 落到搜索框下方净空区，第一行
+  ROW_TOP 110 → 112，实测表头金字带 y185..207 与行 1 文字 y227..239
+  完全分离（原先行 1 胶囊顶 209 直接压住表头 214..228）
 - **加入钮右移 15**：`COLS.act` 269 → 284，实测状态文字右缘 945 / 胶囊左缘 946，1px 净空（原先重叠 21px）
-- **刷新图标放大**：NAV_PAINTERS.refresh 圆弧 r8/线宽 3 → r13/线宽 4.5（箭头同比 1.6×），图标本体亮金像素 27 → 88（3.3 倍）——原先 16px 小弧线在 44px 钮里肉眼不可见
-- **顶部死区回收**：眉行（副标题+计数）y198 → 232、标题/搜索/刷新主行 y164 → 196，面板内首个内容从 y147 提到 y108（原先面板顶到眉行空 66px）
+- **刷新图标放大**：NAV_PAINTERS.refresh 圆弧 r8/线宽 3 → r13/线宽
+  4.5（箭头同比 1.6×），图标本体亮金像素 27 → 88（3.3 倍）——原先
+  16px 小弧线在 44px 钮里肉眼不可见
+- **顶部死区回收**：眉行（副标题+计数）y198 → 232、标题/搜索/刷新
+  主行 y164 → 196，面板内首个内容从 y147 提到 y108（原先面板顶到
+  眉行空 66px）
 - 测试：`smoke-lobby.mjs` 17/17 PASS；验收探针 `shot-v262.mjs` 四项全过（种密码房复现用户场景）
 
 ### 2026-09-26 大厅/建房弹窗 7 处排版对齐（v26.1）
 
-- **大厅头部两行制**：「德州扑克」标题与搜索输入框同一行（标题锚左 x-344，搜索框 300×44 @ x34，均 y164）；副标题与房间计数挪到眉行 y198（计数 `anchorX=1` 右对齐到面板右缘），主行不再拥挤
+- **大厅头部两行制**：「德州扑克」标题与搜索输入框同一行（标题锚左
+  x-344，搜索框 300×44 @ x34，均 y164）；副标题与房间计数挪到眉行
+  y198（计数 `anchorX=1` 右对齐到面板右缘），主行不再拥挤
 - **刷新钮移出输入框**：刷新圆钮挪到搜索框右侧 x226（框右缘 184 ↔ 钮左缘 204，20px 间距），不再压在输入框上
 - **建房弹窗房名标签**：标签上移到 y172，与输入框顶（y158）拉开 14px 间距，不再被框挡住
 - **人数步进组居中**：[−] x-66 / 数字 x0 / [+] x66，整组关于弹窗中线对称（实测屏幕左缘 567 / 右缘 712，中点恰为 640）
 - **密码输入框**：y-140 → y-145（按要求下移 5）
 - **中间面板左移 30**：`panel` x104 → x74，冒烟探针（金边 340..1088、锁列 x≈402、行心 714）同步更新
 - **空列表提示**：y-180 → y-100 上移 80，落在行区中段（面板中线 x714 处居中）
-- 测试：`smoke-lobby.mjs` 17/17、`dbg-confirm.mjs` 全绿、`dbg-password.mjs` 全绿（对密码后进房判据修正：y79..83 金边带在房内会被牌桌金 rim 命中，改用房心呢绒亮度，同 dbg-confirm 教训）
+- 测试：`smoke-lobby.mjs` 17/17、`dbg-confirm.mjs` 全绿、
+  `dbg-password.mjs` 全绿（对密码后进房判据修正：y79..83 金边带在
+  房内会被牌桌金 rim 命中，改用房心呢绒亮度，同 dbg-confirm 教训）
 
 ### 2026-09-26 手绘大厅面板 + 房间密码 + 两个确认弹窗（v26）
 
-- **手绘中间面板**：房间列表展示区背景与搜索条/刷新按钮不再取自雪碧图，改纯 Graphics 手绘（深绿 `Color(16,38,28)` 底 + 金边，与左导航配色一致）；面板 748×528 屏幕居中，不遮顶栏圆钮与底部大按钮
-- **房间行也改手绘**：素材行每行都烧死一个金锁图标，与「有密码才显示锁」矛盾 → 行背景、加入/已满胶囊全部手绘，锁图标按 `locked` 条件显隐（`Theme.drawLockGlyph`）
-- **房间密码**：创建房间弹窗新增密码输入（留空不设，≤12 字去空白）；上锁房间列表行首挂锁、加入弹密码框（`PasswordDialog`，错密码红字提示不关框）；断线重连/房主免密回归。服务端 `RoomManager` 校验，错误回 `roomNeedPass` / `房间密码错误`
-- **退出按钮补图标**：房内工具条「离开」原无图标 → 门+箭头 Graphics 图标。注意：同一节点第二个 Graphics 运行时不渲染，图标画在子节点上
-- **最后一人退房确认**：`leaveRoom` 先回 `askLeaveClose`，客户端弹「退出房间 / 您为当前房间内最后一位玩家，退出后房间自动关闭。」，确认（`confirm:true`）才真退，房内无人且无保留座立即销毁（列表即刻消失）
+- **手绘中间面板**：房间列表展示区背景与搜索条/刷新按钮不再取自
+  雪碧图，改纯 Graphics 手绘（深绿 `Color(16,38,28)` 底 + 金边，与
+  左导航配色一致）；面板 748×528 屏幕居中，不遮顶栏圆钮与底部大按钮
+- **房间行也改手绘**：素材行每行都烧死一个金锁图标，与「有密码才
+  显示锁」矛盾 → 行背景、加入/已满胶囊全部手绘，锁图标按 `locked`
+  条件显隐（`Theme.drawLockGlyph`）
+- **房间密码**：创建房间弹窗新增密码输入（留空不设，≤12 字去空白）；
+  上锁房间列表行首挂锁、加入弹密码框（`PasswordDialog`，错密码红字
+  提示不关框）；断线重连/房主免密回归。服务端 `RoomManager` 校验，
+  错误回 `roomNeedPass` / `房间密码错误`
+- **退出按钮补图标**：房内工具条「离开」原无图标 → 门+箭头 Graphics
+  图标。注意：同一节点第二个 Graphics 运行时不渲染，图标画在子节点上
+- **最后一人退房确认**：`leaveRoom` 先回 `askLeaveClose`，客户端弹
+  「退出房间 / 您为当前房间内最后一位玩家，退出后房间自动关闭。」，
+  确认（`confirm:true`）才真退，房内无人且无保留座立即销毁（列表
+  即刻消失）
 - **退出账号确认**：首页右上退出钮先弹「退出登录」确认框，确认才清 token 回登录页
-- 测试：服务端自检 71 项全绿（新增密码门禁/上锁标记/askLeaveClose/即时销毁/免密重连）；`smoke-lobby.mjs` 17 项（手绘面板金边、锁图标、顶栏不遮挡、退房销毁）；历史数据冒烟 13/13；密码与两个确认弹窗各有一条端到端 UI 流（`dbg-password.mjs` / `dbg-confirm.mjs`）
+- 测试：服务端自检 71 项全绿（新增密码门禁/上锁标记/askLeaveClose/
+  即时销毁/免密重连）；`smoke-lobby.mjs` 17 项（手绘面板金边、锁
+  图标、顶栏不遮挡、退房销毁）；历史数据冒烟 13/13；密码与两个确认
+  弹窗各有一条端到端 UI 流（`dbg-password.mjs` / `dbg-confirm.mjs`）
 
 ### 2026-09-26 回退 v24 图纸方案，恢复 v23 大厅（v25）
 
-- 下午的「效果图直裁 lobby-elems.png 整元素图纸 + 背景整图铺底」方案（v24）实际观感与效果图偏差大，**整体回退**：`git revert` 恢复 v23 的 Lobby.ts/HomeUi.ts，删除 lobby-elems/lobby-bg 资源；`image.png` 效果图保留在根目录（未跟踪）继续作参照
+- 下午的「效果图直裁 lobby-elems.png 整元素图纸 + 背景整图铺底」方案
+  （v24）实际观感与效果图偏差大，**整体回退**：`git revert` 恢复
+  v23 的 Lobby.ts/HomeUi.ts，删除 lobby-elems/lobby-bg 资源；
+  `image.png` 效果图保留在根目录（未跟踪）继续作参照
 - 回退前现场已存 `backup-v24-lobby-ui` 分支（含当时未提交改动），要找回任何东西去那里看
 - tools/smoke/smoke-lobby.mjs 色探针同步恢复 v23 口径（亮绿、旧采样点）
-- 重建 + 部署：本地与线上（8.133.161.128）冒烟 13/13 PASS、远端自检 59/59
+- 重建 + 部署：本地与线上（8.133.161.128）冒烟 13/13 PASS、远端自检
+  59/59
 
 ### 2026-09-26 首页 UI 1:1 还原 + 手机图裂修复（v23）
 
-- **顶栏双头像修复**：`playerBar` 素材里本来就烧死了「金环乌龟头像 + 金币图标」，此前又用代码在上面叠了一份头像/金环 → 删掉全部叠加，昵称白字、金币金字对齐素材留白区（图内 dx180..380）
-- **房间行修复**：素材行左端自带金色锁图标，此前房间号列压在锁上 → 六列整体右移避开；房间号改亮白粗体（原灰字对比度不足）；「加入」直接用素材行内烧死的金色胶囊（叠深色字），满员时换成「已满」灰胶囊
+- **顶栏双头像修复**：`playerBar` 素材里本来就烧死了「金环乌龟头像 +
+  金币图标」，此前又用代码在上面叠了一份头像/金环 → 删掉全部叠加，
+  昵称白字、金币金字对齐素材留白区（图内 dx180..380）
+- **房间行修复**：素材行左端自带金色锁图标，此前房间号列压在锁上 →
+  六列整体右移避开；房间号改亮白粗体（原灰字对比度不足）；「加入」
+  直接用素材行内烧死的金色胶囊（叠深色字），满员时换成「已满」灰胶囊
 - **右上角退出图标重画**：电源图标辨识度差 → 改为「门 + 出门箭头」，纯 Graphics 绘制
-- **创建房间弹窗二次打不开的 bug**：关闭（取消/遮罩）没有通知持有方清引用，`createDialog` 一直挂着旧节点 → `CreateRoomDialog` 增加 `onClose` 回调，`OnlineGameApp` 收到后置 null；`smoke-lobby.mjs` 新增「开 → 关 → 再开」回归用例
-- **手机端图片全部加载失败**：旧手机浏览器不解码 webp → `tools/optimize/webp-to-png.mjs` 把全部素材从 backup 原图重新转成调色板 PNG（`resources` 共 ~2.7MB）；`resources.load` 路径本就不带后缀，客户端零改动
-- 冒烟 `smoke-lobby.mjs` 13 项全绿（新增弹窗复现 3 项；按钮色块探针改到正确屏幕坐标 y≈655）
+- **创建房间弹窗二次打不开的 bug**：关闭（取消/遮罩）没有通知持有方
+  清引用，`createDialog` 一直挂着旧节点 → `CreateRoomDialog` 增加
+  `onClose` 回调，`OnlineGameApp` 收到后置 null；`smoke-lobby.mjs`
+  新增「开 → 关 → 再开」回归用例
+- **手机端图片全部加载失败**：旧手机浏览器不解码 webp →
+  `tools/optimize/webp-to-png.mjs` 把全部素材从 backup 原图重新转成
+  调色板 PNG（`resources` 共 ~2.7MB）；`resources.load` 路径本就不带
+  后缀，客户端零改动
+- 冒烟 `smoke-lobby.mjs` 13 项全绿（新增弹窗复现 3 项；按钮色块探针
+  改到正确屏幕坐标 y≈655）
 
 ## 功能一览
 
@@ -115,9 +240,13 @@
 - 纯代码合成音效（Web Audio，无音频资源）：发牌 / 翻牌 / 下注 / 胜利，右上角「音效」按钮可静音
 - 玩家辅助：你的名牌展开第二行，实时显示当前牌型与蒙特卡洛胜率（每街与对手弃牌后自动刷新）
 - 收池动画：每街结束时各家下注筹码飞进底池
-- 图标使用 Font Awesome 6 Solid 字体：`assets/resources/fonts/fa-solid.ttf`，由 `IconFont.ts` 统一加载，失败时图标留空、纯文字照常
+- 图标使用 Font Awesome 6 Solid 字体：
+  `assets/resources/fonts/fa-solid.ttf`，由 `IconFont.ts` 统一加载，
+  失败时图标留空、纯文字照常
 - 机器人接入 DeepSeek（deepseek-chat）：AI 决策 + 角色台词，失败自动降级本地策略
-- 联机模式：访问链接输名字直接上桌，空位由服务端 AI 补齐，4 座满后自动观战；真人掉线座位即时转 AI 托管不卡局；聊天面板可发言，视角永远以自己为下方座位
+- 联机模式：访问链接输名字直接上桌，空位由服务端 AI 补齐，4 座满后
+  自动观战；真人掉线座位即时转 AI 托管不卡局；聊天面板可发言，视角
+  永远以自己为下方座位
 - DEV 模式启动时自动运行逻辑自测，结果打印在控制台
 
 ## 快速开始
@@ -155,7 +284,9 @@
 
 ### 玩法
 
-- 打开 `分享链接`（形如 `http://<服务器>/index.html?online=1`），输昵称或游客进入后先落**大厅**：可创建房间（3-8 座、四档盲注、**可选密码**）、从公开列表加入或快速加入
+- 打开 `分享链接`（形如 `http://<服务器>/index.html?online=1`），输
+  昵称或游客进入后先落**大厅**：可创建房间（3-8 座、四档盲注、
+  **可选密码**）、从公开列表加入或快速加入
 - 上锁房间列表行首有挂锁图标，加入需输入密码（错密码红字提示）；断线重连免密回到原房
 - 房间内最后一名玩家退出前会弹确认（「退出后房间自动关闭」），确认后房间立即销毁；大厅右上「退出账号」同样先弹确认
 - 空位由服务端 AI（DeepSeek，失败回落 BotBrain + 台词池）代打；满座后新玩家进入观战
@@ -173,14 +304,16 @@
 ```text
 浏览器（Cocos web 构建）
   └─ NetClient ── WebSocket(JSON) ── server/（Node 权威服务器）
-                                       ├─ 复用 assets/scripts/core 引擎跑牌局
-                                       ├─ Table：8 座 / 等待队列 / 观战 / AI 代打 / 投票重置 / 行动计时
-                                       └─ HTTP 伺服 server/web/ 内的构建产物（同端口）
+                          ├─ 复用 assets/scripts/core 引擎跑牌局
+                          ├─ Table：8 座 / 等待队列 / 观战 / AI 代打 / 投票重置 / 行动计时
+                          └─ HTTP 伺服 server/web/ 内的构建产物（同端口）
 ```
 
 - 客户端**只渲染快照**：服务器广播全量 `Snapshot`，客户端 diff 前后快照触发发牌、翻公共牌、收池、气泡、胜利特效
 - 服务端与单机共用同一套 `core/` 引擎（纯逻辑无 cc 依赖），规则 100% 一致；`net/Protocol.ts` 是双端共享的消息类型
-- 服务端 AI 走 DeepSeek：key 从环境变量 `DEEPSEEK_API_KEY` 读取（systemd 或 shell 注入），**不进仓库与浏览器构建产物**；调用失败自动回落本地 BotBrain，游戏永不卡死
+- 服务端 AI 走 DeepSeek：key 从环境变量 `DEEPSEEK_API_KEY` 读取
+  （systemd 或 shell 注入），**不进仓库与浏览器构建产物**；调用失败
+  自动回落本地 BotBrain，游戏永不卡死
 
 ### 本地试玩（不用服务器）
 
@@ -192,7 +325,9 @@
 
 1. Cocos 构建发布 web-mobile，把 `build/web-mobile/` 整目录内容上传到服务器 `server/web/`
 2. 服务器进入 `server/` 执行 `npm install`（国内可加 `--registry=https://registry.npmmirror.com`）
-3. `npm start`（或用 systemd 守护，参考 `Environment=PORT=80`；服务端 AI 的 key 用 `Environment=DEEPSEEK_API_KEY=sk-xxx` 注入，不要写进任何文件）
+3. `npm start`（或用 systemd 守护，参考 `Environment=PORT=80`；服务端
+   AI 的 key 用 `Environment=DEEPSEEK_API_KEY=sk-xxx` 注入，不要写进
+   任何文件）
 4. 分享地址：`http://<服务器>:<端口>/index.html?online=1`（不带 `?online=1` 则进单机模式）
 5. `server/selftest.ts` 是协议自检（起真实服务器模拟 9 个连接，含投票重置用例）：`npm run selftest`
 6. `server/settlement-check.ts` 是结算回归（对A / 对9 边池场景）：`npx tsx settlement-check.ts`
@@ -263,33 +398,70 @@ assets/scripts/
 - 机器人每次行动调用一次 DeepSeek `deepseek-chat`，一次返回「决策 + 台词」
 - 三个机器人各有性格人设：阿宝=新手话痨、老K=老练毒舌、胖虎=莽夫
 - 断网 / 超时 / 返回不合法时自动降级为本地 BotBrain + 本地台词池，游戏不中断
-- API Key 保存在 `assets/scripts/ai/DeepSeekKey.local.ts`：仅限本地使用，**勿提交仓库、勿分发构建产物**；泄露后到 DeepSeek 后台轮换
+- API Key 保存在 `assets/scripts/ai/DeepSeekKey.local.ts`：仅限本地
+  使用，**勿提交仓库、勿分发构建产物**；泄露后到 DeepSeek 后台轮换
 
 ## 常见问题
 
-| 现象 | 处理 |
-| --- | --- |
-| 运行后一片漆黑没有 UI | 确认场景里有 Canvas，且 Game 节点在 Canvas 层级下 |
-| 预览灰底、UI 变成被透视拍歪的斜面 | 代码创建的节点默认在 DEFAULT 层，Canvas 的 UI 相机只渲染 UI_2D 层；`Theme.createNode()` 已统一设置 `node.layer = Layers.Enum.UI_2D` |
-| 某个 Graphics 图形被遮住不显示 | 节点自身的渲染组件先于子节点绘制；想让它盖住某个子节点，就把它挪到排在后者之后的子节点上（见 `TableView` 的 felt 节点） |
-| 控制台没有自测输出 | 自测仅在开发预览（DEV）下运行；构建发布版不会执行 |
-| 想改盲注 / 起始筹码 | `GameApp.startMatch()` 里 `new GameEngine({...})` 传参覆盖默认配置 |
-| 想换座位布局 / 桌子配色 | `GameApp.ts` 的 `SEAT_LAYOUT`、`Theme.ts` 的 `THEME` |
-| 机器人不说台词、行动变快 | DeepSeek 调用失败已降级本地策略，控制台有 `[AI]` 警告；检查网络或 key |
-| 更换 DeepSeek key | 只改 `assets/scripts/ai/DeepSeekKey.local.ts` 一处 |
-| 牌面显示的还是代码绘制简版 | `assets/resources/cards.png` 加载失败会回退并打印 `[CardFaces]` 警告；换牌面图直接覆盖该文件（1440×1320，9 列 × 6 行、每格 160×220，行优先 ♠♥♣♦ A~K + 大小王）。注意：新图必须是**精确网格**——带缝隙或错位的图会出现黑边/大小不一（当前的 cards.png 是从原图按实测边界重排过的） |
-| 想换牌背 / 桌面整景图 | 覆盖 `assets/resources/card-back.png`（竖版整图，替换后若四角不透明会显示方角）和 `assets/resources/table.png`（16:9 整景，铺满全屏）；加载失败自动回退代码绘制，控制台有对应警告 |
-| 运行时报 `Cannot read properties of undefined (reading 'SIMPLE')` | 3.8 里 `SpriteType` 是引擎私有枚举，不能 `import { SpriteType } from 'cc'`（编译不报错但运行时是 undefined）；正确写法是 `Sprite.Type.SIMPLE`、`Sprite.SizeMode.CUSTOM` |
-| 节点挂了 Sprite 后，原来的 Graphics / 牌面都不渲染 | 一个节点只能挂一个渲染组件（引擎里 `node._uiProps.uiComp` 只存一个，后者顶掉前者）；Sprite 要放到独立的子节点上，见 `CardView` 的 img 节点 |
-| Mask 裁剪的子节点在预览里整体消失 | 双相机（3D + UI）场景下 Mask 的模板缓冲可能被清掉导致内容全被裁没；滚动列表建议像 `ChatLog` 那样手动按可视范围设置行 `active`，不依赖 Mask |
-| 图标（奖杯 / 箭头 / 气泡 / 金币）不显示 | 检查 `assets/resources/fonts/fa-solid.ttf` 是否存在，加载失败控制台会打印 `[IconFont]` 警告，其余功能不受影响；换图标改 `ui/IconFont.ts` 的 `ICON` 表（Font Awesome 6 Solid 的 unicode 码点） |
-| 聊天面板怎么看更早的发言 | 在面板上按住上下拖动即可滚动，右侧滚动条指示位置；最多保留最近 50 条 |
-| 没有声音 / 想关声音 | 音效用浏览器 Web Audio 合成（无音频资源），首次需一次点击交互后才会响；右上角「音效」按钮切换静音。原生平台预览无声属正常 |
-| 胜率是怎么算的 | 每次刷新用已知牌（底牌 + 公共牌）做 160 次蒙特卡洛模拟：随机补全公共牌与对手底牌后比牌型，赢 1 分 / 平 0.5 分；数值有少量随机波动属正常 |
-| 联机时输入不了名字 / 聊天 | EditBox 需要点击输入框聚焦；个别浏览器需要多点一次，移动端会拉起系统键盘 |
-| 联机中途断线怎么办 | 座位会被 AI 托管继续打，刷新页面重新输名字排队，下一手回到桌上 |
-| 想换联机端口 | 服务端 `PORT` 环境变量（systemd 部署改 `texas.service` 里的 `Environment=PORT=`），客户端分享链接不用变（同源自动连对端口） |
-| 服务器上 AI 说话没接 DeepSeek | 联机 AI 刻意只用本地策略：DeepSeek key 留在单机客户端，不上服务器（避免 key 泄露）；要接可在 `server/Table.ts` 的 `scheduleBot` 里扩展 |
+- **运行后一片漆黑没有 UI**：确认场景里有 Canvas，且 Game 节点在
+  Canvas 层级下
+- **预览灰底、UI 变成被透视拍歪的斜面**：代码创建的节点默认在
+  DEFAULT 层，Canvas 的 UI 相机只渲染 UI_2D 层；`Theme.createNode()`
+  已统一设置 `node.layer = Layers.Enum.UI_2D`
+- **某个 Graphics 图形被遮住不显示**：节点自身的渲染组件先于子节点
+  绘制；想让它盖住某个子节点，就把它挪到排在后者之后的子节点上
+  （见 `TableView` 的 felt 节点）
+- **控制台没有自测输出**：自测仅在开发预览（DEV）下运行；构建发布版
+  不会执行
+- **想改盲注 / 起始筹码**：`GameApp.startMatch()` 里
+  `new GameEngine({...})` 传参覆盖默认配置
+- **想换座位布局 / 桌子配色**：`GameApp.ts` 的 `SEAT_LAYOUT`、
+  `Theme.ts` 的 `THEME`
+- **机器人不说台词、行动变快**：DeepSeek 调用失败已降级本地策略，
+  控制台有 `[AI]` 警告；检查网络或 key
+- **更换 DeepSeek key**：只改 `assets/scripts/ai/DeepSeekKey.local.ts`
+  一处
+- **牌面显示的还是代码绘制简版**：`assets/resources/cards.png` 加载
+  失败会回退并打印 `[CardFaces]` 警告；换牌面图直接覆盖该文件
+  （1440×1320，9 列 × 6 行、每格 160×220，行优先 ♠♥♣♦ A~K +
+  大小王）。注意：新图必须是**精确网格**——带缝隙或错位的图会出现
+  黑边/大小不一（当前的 cards.png 是从原图按实测边界重排过的）
+- **想换牌背 / 桌面整景图**：覆盖 `assets/resources/card-back.png`
+  （竖版整图，替换后若四角不透明会显示方角）和
+  `assets/resources/table.png`（16:9 整景，铺满全屏）；加载失败自动
+  回退代码绘制，控制台有对应警告
+- **运行时报 `Cannot read properties of undefined (reading
+  'SIMPLE')`**：3.8 里 `SpriteType` 是引擎私有枚举，不能
+  `import { SpriteType } from 'cc'`（编译不报错但运行时是
+  undefined）；正确写法是 `Sprite.Type.SIMPLE`、`Sprite.SizeMode.CUSTOM`
+- **节点挂了 Sprite 后，原来的 Graphics / 牌面都不渲染**：一个节点
+  只能挂一个渲染组件（引擎里 `node._uiProps.uiComp` 只存一个，后者
+  顶掉前者）；Sprite 要放到独立的子节点上，见 `CardView` 的 img 节点
+- **Mask 裁剪的子节点在预览里整体消失**：双相机（3D + UI）场景下
+  Mask 的模板缓冲可能被清掉导致内容全被裁没；滚动列表建议像
+  `ChatLog` 那样手动按可视范围设置行 `active`，不依赖 Mask
+- **图标（奖杯 / 箭头 / 气泡 / 金币）不显示**：检查
+  `assets/resources/fonts/fa-solid.ttf` 是否存在，加载失败控制台会
+  打印 `[IconFont]` 警告，其余功能不受影响；换图标改 `ui/IconFont.ts`
+  的 `ICON` 表（Font Awesome 6 Solid 的 unicode 码点）
+- **聊天面板怎么看更早的发言**：在面板上按住上下拖动即可滚动，右侧
+  滚动条指示位置；最多保留最近 50 条
+- **没有声音 / 想关声音**：音效用浏览器 Web Audio 合成（无音频
+  资源），首次需一次点击交互后才会响；右上角「音效」按钮切换静音。
+  原生平台预览无声属正常
+- **胜率是怎么算的**：每次刷新用已知牌（底牌 + 公共牌）做 160 次
+  蒙特卡洛模拟：随机补全公共牌与对手底牌后比牌型，赢 1 分 / 平
+  0.5 分；数值有少量随机波动属正常
+- **联机时输入不了名字 / 聊天**：EditBox 需要点击输入框聚焦；个别
+  浏览器需要多点一次，移动端会拉起系统键盘
+- **联机中途断线怎么办**：座位会被 AI 托管继续打，刷新页面重新输名字
+  排队，下一手回到桌上
+- **想换联机端口**：服务端 `PORT` 环境变量（systemd 部署改
+  `texas.service` 里的 `Environment=PORT=`），客户端分享链接不用变
+  （同源自动连对端口）
+- **服务器上 AI 说话没接 DeepSeek**：联机 AI 刻意只用本地策略：
+  DeepSeek key 留在单机客户端，不上服务器（避免 key 泄露）；要接可
+  在 `server/Table.ts` 的 `scheduleBot` 里扩展
 
 ## 下一步练习建议
 
@@ -298,4 +470,3 @@ assets/scripts/
 3. 把固定档位加注升级为滑条 + 确认（`Slider` 组件）
 4. 用蒙特卡洛模拟替换 `BotBrain` 的启发式强度评估
 5. 接入 `EventTouch` 做牌局回放或战绩统计页
- 4236712 (德州扑克：单机+联机完整版)
