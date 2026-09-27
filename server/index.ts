@@ -5,6 +5,7 @@ import { brotliCompressSync, gzipSync } from 'zlib'
 import { WebSocket, WebSocketServer } from 'ws'
 import { AccountStore } from './AccountStore'
 import { RoomManager } from './RoomManager'
+import { sanitizeName } from './Table'
 import { ClientMsg, ServerMsg } from '../assets/scripts/net/Protocol'
 
 /**
@@ -229,7 +230,12 @@ wss.on('connection', (ws: WebSocket) => {
     if (msg.t === 'join') {
       if (!joined) {
         joined = true
-        rooms.attach(ws, String(msg.name ?? ''), null)
+        // 游客也回 auth-ok（token 为空）：客户端顶栏玩家名只在收到 auth-ok 时
+        // 更新，游客不回的话「账号退出 → 游客进入」顶栏会一直显示上一个账号名
+        // （v26.8 bug）。名字走 sanitizeName，与桌面座位上的名字同源
+        const guest = sanitizeName(String(msg.name ?? ''))
+        reply({ t: 'auth-ok', token: '', name: guest, won: 0, played: 0 })
+        rooms.attach(ws, guest, null)
       }
       return
     }

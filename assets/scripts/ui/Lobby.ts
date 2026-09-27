@@ -648,6 +648,16 @@ export class Lobby {
     this.node.active = false;
   }
 
+  /** 退出账号：顶栏与战绩页回到未登录占位（游客 / 登录后保存战绩） */
+  resetAccount(): void {
+    this.account = null;
+    if (this.nameLabels.length) {
+      this.nameLabels[0]("游客");
+      this.nameLabels[1]("登录后保存战绩");
+    }
+    this.renderRecord();
+  }
+
   setAccount(name: string, won: number, played: number): void {
     this.account = { name, won, played };
     if (this.nameLabels.length) {

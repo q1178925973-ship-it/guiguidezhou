@@ -423,6 +423,8 @@ export class OnlineGameApp extends Component {
     this.net.close()
     this.pendingAuth = { t: 'join', name: '玩家' }
     this.enterLobby()
+    // 顶栏立即回到未登录态（游客 / 登录后保存战绩），不等下一次 auth-ok
+    this.lobby.resetAccount()
     this.openAccountDialog()
   }
 
@@ -518,8 +520,12 @@ export class OnlineGameApp extends Component {
 
   private onNet(msg: ServerMsg): void {
     if (msg.t === 'auth-ok') {
-      saveToken(msg.token)
-      saveName(msg.name)
+      // 游客的 auth-ok 不带 token（v26.8）：顶栏照常更新名字，但本地不存空
+      // token、也不用随机游客名覆盖弹窗预填的账号名
+      if (msg.token) {
+        saveToken(msg.token)
+        saveName(msg.name)
+      }
       this.lobby.setAccount(msg.name, msg.won, msg.played)
       this.accountDialog?.hide()
       this.accountDialog = null

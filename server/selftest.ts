@@ -150,10 +150,6 @@ function connectAuth(port: number, first: Record<string, unknown>, enter?: Enter
     }
     ws.on('open', () => {
       ws.send(JSON.stringify(first))
-      // 游客首条消息：join 落大厅后立刻建房 / 加房（同连接按序送达）
-      if (first.t === 'join') {
-        enterRoom()
-      }
       resolveFn(rec)
     })
     ws.on('error', reject)
@@ -164,7 +160,7 @@ function connectAuth(port: number, first: Record<string, unknown>, enter?: Enter
         rec.authName = msg.name
         rec.authWon = msg.won
         rec.authPlayed = msg.played
-        enterRoom()
+        enterRoom() // join / register / login 三条路径现在都会收到 auth-ok，入房统一走这里
       } else if (msg.t === 'auth-err') {
         rec.authErr = msg.msg
       } else if (msg.t === 'roomJoined') {
@@ -237,9 +233,6 @@ function openRoom(port: number, first: Record<string, unknown>, enter?: EnterOpt
     }
     ws.on('open', () => {
       ws.send(JSON.stringify(first))
-      if (first.t === 'join') {
-        enterRoom() // 游客：join 落大厅后立刻建 / 加房
-      }
       resolveFn(rec)
     })
     ws.on('error', reject)
@@ -485,6 +478,12 @@ async function runSelftest(): Promise<void> {
       // 断线托管：座位名牌应立即换成机器人名（与聊天/台词口径一致，不出戏）
       const watcher = await connectAuth(PORT + 1, { t: 'join', name: '旁观者' }, { join: zhang.roomId ?? '' })
       await waitFor(() => !!watcher.latest, 8000)
+      // v26.8：游客 join 也要回 auth-ok（客户端顶栏名字的唯一更新时机），
+      // 否则「账号退出 → 游客进入」顶栏会残留上一个账号名
+      check(
+        watcher.authName === '旁观者' && watcher.token === '',
+        `游客也回 auth-ok（名字=${watcher.authName} token=${JSON.stringify(watcher.token)}）`,
+      )
       check(
         (watcher.latest?.players[mySeat]?.name ?? '张三') !== '张三',
         `断线托管后名牌立即换机器人名（实际 ${watcher.latest?.players[mySeat]?.name}）`,

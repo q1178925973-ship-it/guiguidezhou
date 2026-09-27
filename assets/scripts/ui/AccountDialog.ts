@@ -65,7 +65,10 @@ export class AccountDialog {
         return;
       }
       this.busy = true;
-      onAuth(kind, name, pass);
+      // 游客不吃输入框内容：退出账号后弹窗预填的是上个账号名，原样带上的话
+      // 游客会顶着账号名进场（顶栏/座位全显示旧名，v26.8 bug）。
+      // 游客名由入口层随机生成（玩家XXXX），名字框只属于账号登录/注册
+      onAuth(kind, kind === "guest" ? "" : name, pass);
     };
     // 不绑回车提交：web 上 EDITING_RETURN / DID_ENDED 都会被输入法确认、点击失焦误触发，
     // 抢在按钮前误发 login；账号场景动作有登录/注册两个，只靠按钮显式选择

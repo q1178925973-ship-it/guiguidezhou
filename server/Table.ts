@@ -899,7 +899,7 @@ function reserveLabel(): string {
 }
 
 /** 名字清洗：去空白、限长，空名给默认 */
-function sanitizeName(raw: string): string {
+export function sanitizeName(raw: string): string {
   const name = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 8)
   return name || `玩家${Math.floor(1000 + Math.random() * 9000)}`
 }
