@@ -601,7 +601,10 @@ export class OnlineGameApp extends Component {
       return
     }
     if (msg.t === 'say') {
-      this.chatLog.push(msg.name, msg.text)
+      // 机器人台词（tag 'ai'）只走座位气泡，不进聊天面板，避免刷屏顶掉玩家聊天
+      if (msg.tag !== 'ai') {
+        this.chatLog.push(msg.name, msg.text)
+      }
       if (msg.tag === 'chat' && msg.seat !== undefined && msg.seat >= 0) {
         // 真人聊天：说话者座位冒文字气泡
         this.seats[this.L(msg.seat)].showAction(msg.text)

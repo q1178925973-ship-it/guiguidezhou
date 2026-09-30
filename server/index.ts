@@ -108,17 +108,6 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     res.end(`ok players-table running`)
     return
   }
-  // 引擎减负：本项目零物理、零 spine，用合法的空 SystemJS 模块顶替引擎启动期
-  // 预载的这两类 wasm/asm 模块（首屏省约 2.3MB）。引擎侧拿到空导出会走各自的
-  // 失败 catch，只在控制台留一两行无害提示，游戏完全不受影响。
-  if (/^\/cocos-js\/(assets\/)?(bullet|spine)/.test(url.pathname)) {
-    res.writeHead(200, {
-      'Content-Type': 'text/javascript; charset=utf-8',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    })
-    res.end('System.register([],(function(){"use strict";return{execute:function(){}}}))')
-    return
-  }
   if (!existsSync(WEB_DIR)) {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('德州扑克服务器运行中：web/ 目录还没有构建产物，请上传 Cocos web 构建输出')

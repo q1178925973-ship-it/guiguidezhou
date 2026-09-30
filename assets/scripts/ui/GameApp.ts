@@ -254,10 +254,7 @@ export class GameApp extends Component {
       const actor = this.engine.byId(last.playerId)!;
       const full = `${describeActOf(last.act, actor)}${say ? `「${say}」` : ""}`;
       this.seats[last.playerId].showAction(full);
-      // 机器人发言进入左下角聊天记录
-      if (actor.isBot) {
-        this.chatLog.push(actor.name, full);
-      }
+      // 机器人发言只走座位气泡，不进左下角聊天记录（避免刷屏顶掉玩家聊天）
       // 弃牌者稍后翻开底牌，让玩家看到他弃了什么
       if (last.act.kind === ActKind.Fold) {
         const id = last.playerId;

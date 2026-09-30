@@ -90,9 +90,9 @@ export function runLogicSelfTests(): void {
     eq(engine.lastAwards.length, 1)
     eq(engine.lastAwards[0].reason, 'fold')
     eq(engine.lastAwards[0].amount, 50)
-    eq(engine.byId(3)!.chips, 1030) // 1000 + 赢下盲注 30
-    eq(engine.byId(1)!.chips, 990)
-    eq(engine.byId(2)!.chips, 980)
+    eq(engine.byId(3)!.chips, 100030) // 100000 + 赢下盲注 30
+    eq(engine.byId(1)!.chips, 99990)
+    eq(engine.byId(2)!.chips, 99980)
   })
 
   test('结算：边池分层与弃牌贡献', () => {

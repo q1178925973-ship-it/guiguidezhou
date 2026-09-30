@@ -443,7 +443,7 @@ export class Table {
     }
   }
 
-  /** 投票通过：重建引擎（全员 1000 筹码、胜负统计清零），直接开新一手 */
+  /** 投票通过：重建引擎（全员 100000 筹码、胜负统计清零），直接开新一手 */
   private resetMatch(): void {
     this.clearBotTimer()
     this.clearTurnTimer()
@@ -459,7 +459,7 @@ export class Table {
     this.engine = new GameEngine(this.engineCfg)
     this.botNames.forEach((name) => this.engine.addPlayer(name, true))
     this.engine.on((ev) => this.onEngineEvent(ev))
-    this.say('系统', '对局已重置：全员回到 1000 筹码（账号玩家仍累计生涯胜负）')
+    this.say('系统', '对局已重置：全员回到 100000 筹码（账号玩家仍累计生涯胜负）')
     while (this.waiting.length > 0) {
       const free = this.firstFreeSeat()
       if (free < 0) {

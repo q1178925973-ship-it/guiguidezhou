@@ -5,7 +5,7 @@ import { settleShowdown } from './Settler'
 import { Act, ActKind, EngineConfig, GameEvent, LegalActs, Phase, PotAward } from './Types'
 
 const DEFAULT_CONFIG: EngineConfig = {
-  startChips: 1000,
+  startChips: 100000,
   smallBlind: 10,
   bigBlind: 20,
 }

@@ -74,12 +74,20 @@ export class ChatLog {
     editNode.setPosition(-40, -66);
     const eb = editNode.addComponent(EditBox);
     eb.maxLength = 60;
+    // 聊天是单行输入：默认 ANY 会在 web 上弹多行 textarea（可换行带滚动条）
+    eb.inputMode = EditBox.InputMode.SINGLE_LINE;
+    // EditBox 引擎内部会把两个 label 重定位到 (左缘+2, 顶边) 且按左上角锚点排布，
+    // 因此锚点须用 (0,1)、行高拉满框高 26 使文字垂直居中，位置写引擎接管后的同规格值兜底
     const ph = createLabel(editNode, "说点什么…", 12, THEME.textDim);
-    ph.node.setPosition(-80, 0);
     ph.node.anchorX = 0;
+    ph.node.anchorY = 1;
+    ph.lineHeight = 26;
+    ph.node.setPosition(-82, 13);
     const tl = createLabel(editNode, "", 15, THEME.textBright);
-    tl.node.setPosition(-80, -3);
     tl.node.anchorX = 0;
+    tl.node.anchorY = 1;
+    tl.lineHeight = 26;
+    tl.node.setPosition(-82, 13);
     eb.placeholderLabel = ph;
     eb.textLabel = tl;
     // 清掉 EditBox 组件自建的默认占位/文本子节点（否则叠显引擎默认的 "label" 字样）
